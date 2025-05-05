@@ -5,6 +5,6 @@ import (
 	"testing"
 )
 
-func TestHelloName(t *testing.T) {
+func DummyTest(t *testing.T) {
 	log.Println("This is a dummy test")
 }
