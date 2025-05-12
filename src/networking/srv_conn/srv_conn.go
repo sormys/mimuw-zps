@@ -56,6 +56,8 @@ func (s Server) RegisterKey(nickname string, key [64]byte) error {
 			"status code", response.StatusCode)
 		return nil
 	}
+
+	// Error handling
 	defer response.Body.Close()
 	body := ""
 	bodyBytes, err := io.ReadAll(response.Body)
@@ -68,7 +70,7 @@ func (s Server) RegisterKey(nickname string, key [64]byte) error {
 		"nickname", nickname,
 		"status code", response.StatusCode,
 		"response body", body)
-	return errors.New(body)
+	return errors.New("received wrong response from server")
 }
 
 func (s Server) GetPeers() ([]string, error) {
@@ -93,7 +95,7 @@ func (s Server) GetPeers() ([]string, error) {
 	if response.StatusCode != http.StatusOK {
 		slog.Warn("Failed to get list of peers",
 			"status code", response.StatusCode, "body", body)
-		return []string{}, err
+		return []string{}, errors.New("failed to get list of peers")
 	}
 	return splitLines(body), nil
 }
