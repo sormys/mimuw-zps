@@ -22,8 +22,17 @@ func NewServer(url string) Server {
 	return Server{url: url}
 }
 
+func splitLines(str string) []string {
+	lines := strings.Split(str, "\n")
+	// Remove empty line from split
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
 // TODO: add constant for length of the key (maybe even a type?)
-func (s Server) Register(nickname string, key [64]byte) error {
+func (s Server) RegisterKey(nickname string, key [64]byte) error {
 	// Construct registration url
 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, "key")
 	if err != nil {
@@ -86,12 +95,7 @@ func (s Server) GetPeers() ([]string, error) {
 			"status code", response.StatusCode, "body", body)
 		return []string{}, err
 	}
-	peers := strings.Split(body, "\n")
-	// Remove empty line from split
-	if len(peers) > 0 && peers[len(peers)-1] == "" {
-		peers = peers[:len(peers)-1]
-	}
-	return peers, nil
+	return splitLines(body), nil
 }
 
 func (s Server) GetPeerKey(peerNickname string) ([64]byte, error) {
@@ -118,9 +122,36 @@ func (s Server) GetPeerKey(peerNickname string) ([64]byte, error) {
 		return EmptyKey, errors.New("failed to get peer key")
 	}
 	if len(bodyBytes) != 64 {
-		slog.Warn("Received key from server of wrong lenght",
+		slog.Warn("Received key from server of wrong length",
 			"length", len(bodyBytes))
 		return EmptyKey, errors.New("wrong key from server")
 	}
 	return [64]byte(bodyBytes), nil
+}
+
+func (s Server) GetPeerAddresses(peerNickname string) ([]string, error) {
+	url, err := url.JoinPath(s.url, "peers", peerNickname, "addresses")
+	if err != nil {
+		slog.Error("Failed to create url of server")
+		return []string{}, err
+	}
+	response, err := http.Get(url)
+	if err != nil {
+		slog.Warn("Failed to get list of peers", "err", err)
+		return []string{}, err
+	}
+	defer response.Body.Close()
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		slog.Warn("Failed to get response body", "err", err,
+			"status code", response.StatusCode, "peer", peerNickname)
+		return []string{}, err
+	}
+	if response.StatusCode != http.StatusOK {
+		slog.Warn("Failed to get peer addresses", "peer", peerNickname,
+			"status code", response.StatusCode)
+		return []string{}, errors.New("failed to get peer addresses")
+	}
+	body := string(bodyBytes)
+	return splitLines(body), nil
 }
