@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mimuw_zps/src/encryption"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -20,7 +21,7 @@ func equalArrays(arr1 []string, arr2 []string) bool {
 // ========================= Server.RegisterKey =========================
 
 func registerKeyServer(t *testing.T, peerNickname string,
-	key [64]byte, statusCode int) *httptest.Server {
+	key encryption.Key, statusCode int) *httptest.Server {
 	return httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != fmt.Sprintf("/peers/%s/key", peerNickname) {
@@ -43,8 +44,8 @@ func registerKeyServer(t *testing.T, peerNickname string,
 
 func TestRegisterKeyCorrectResponse(t *testing.T) {
 	peerNickname := "test_peer"
-	peerKey := [64]byte{}
-	for i := range 64 {
+	peerKey := encryption.Key{}
+	for i := range encryption.ENCRYPTION_KEY_LENGTH {
 		peerKey[i] = byte(i + 1)
 	}
 	testServer := registerKeyServer(t, peerNickname, peerKey,
@@ -61,8 +62,8 @@ func TestRegisterKeyCorrectResponse(t *testing.T) {
 
 func TestRegisterKeyServerError(t *testing.T) {
 	peerNickname := "test_peer"
-	peerKey := [64]byte{}
-	for i := range 64 {
+	peerKey := encryption.Key{}
+	for i := range encryption.ENCRYPTION_KEY_LENGTH {
 		peerKey[i] = byte(i + 1)
 	}
 	testServer := registerKeyServer(t, peerNickname, peerKey,
@@ -86,7 +87,8 @@ func getPeersServer(t *testing.T, statusCode int, responseBytes []byte) *httptes
 				t.Errorf("Expected to request '/peers', got: %s", r.URL.Path)
 			}
 			if r.Method != http.MethodGet {
-				t.Errorf("Expected to receive GET request, got %s instead", r.Method)
+				t.Errorf("Expected to receive GET request, got %s instead",
+					r.Method)
 			}
 			w.WriteHeader(statusCode)
 			w.Write(responseBytes)
@@ -138,7 +140,8 @@ func getPeerKeyServer(t *testing.T, peerNickname string,
 					peerNickname, r.URL.Path)
 			}
 			if r.Method != http.MethodGet {
-				t.Errorf("Expected to receive GET request, got %s instead", r.Method)
+				t.Errorf("Expected to receive GET request, got %s instead",
+					r.Method)
 			}
 			w.WriteHeader(statusCode)
 			w.Write(returnData)
@@ -147,8 +150,8 @@ func getPeerKeyServer(t *testing.T, peerNickname string,
 
 func TestGetPeerKeyCorrectResponse(t *testing.T) {
 	peerNickname := "pudzian"
-	expectedPeerKey := [64]byte{}
-	for i := range 64 {
+	expectedPeerKey := encryption.Key{}
+	for i := range encryption.ENCRYPTION_KEY_LENGTH {
 		expectedPeerKey[i] = byte(i + 1)
 	}
 	testServer := getPeerKeyServer(t, peerNickname, expectedPeerKey[:],
@@ -187,7 +190,8 @@ func TestGetPeerKeyIncorrectResponse(t *testing.T) {
 
 func TestGetPeerKeyInternalServerError(t *testing.T) {
 	peerNickname := "pudzian"
-	testServer := getPeerKeyServer(t, peerNickname, EmptyKey[:],
+	testServer := getPeerKeyServer(t, peerNickname,
+		[]byte("Server error occured"),
 		http.StatusInternalServerError)
 	defer testServer.Close()
 

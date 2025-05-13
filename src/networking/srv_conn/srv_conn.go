@@ -5,14 +5,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mimuw_zps/src/encryption"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
 const PEERS_ENDPOINT = "peers"
-
-var EmptyKey [64]byte
 
 type Server struct {
 	url string
@@ -31,8 +30,7 @@ func splitLines(str string) []string {
 	return lines
 }
 
-// TODO: add constant for length of the key (maybe even a type?)
-func (s Server) RegisterKey(nickname string, key [64]byte) error {
+func (s Server) RegisterKey(nickname string, key encryption.Key) error {
 	// Construct registration url
 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, "key")
 	if err != nil {
@@ -100,35 +98,35 @@ func (s Server) GetPeers() ([]string, error) {
 	return splitLines(body), nil
 }
 
-func (s Server) GetPeerKey(peerNickname string) ([64]byte, error) {
+func (s Server) GetPeerKey(peerNickname string) (encryption.Key, error) {
 	url, err := url.JoinPath(s.url, "peers", peerNickname, "key")
 	if err != nil {
 		slog.Error("Failed to create url of server")
-		return EmptyKey, err
+		return encryption.Key{}, err
 	}
 	response, err := http.Get(url)
 	if err != nil {
 		slog.Warn("Failed to get list of peers", "err", err)
-		return EmptyKey, err
+		return encryption.Key{}, err
 	}
 	defer response.Body.Close()
 	bodyBytes, err := io.ReadAll(response.Body)
 	if err != nil {
 		slog.Warn("Failed to get response body", "err", err,
 			"status code", response.StatusCode, "peer", peerNickname)
-		return EmptyKey, err
+		return encryption.Key{}, err
 	}
 	if response.StatusCode != http.StatusOK {
 		slog.Warn("Failed to get peer key", "peer", peerNickname,
 			"status code", response.StatusCode)
-		return EmptyKey, errors.New("failed to get peer key")
+		return encryption.Key{}, errors.New("failed to get peer key")
 	}
-	if len(bodyBytes) != 64 {
+	if len(bodyBytes) != encryption.ENCRYPTION_KEY_LENGTH {
 		slog.Warn("Received key from server of wrong length",
 			"length", len(bodyBytes))
-		return EmptyKey, errors.New("wrong key from server")
+		return encryption.Key{}, errors.New("wrong key from server")
 	}
-	return [64]byte(bodyBytes), nil
+	return encryption.Key(bodyBytes), nil
 }
 
 func (s Server) GetPeerAddresses(peerNickname string) ([]string, error) {
