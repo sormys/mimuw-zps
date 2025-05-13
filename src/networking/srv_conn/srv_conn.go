@@ -15,14 +15,17 @@ const PEERS_ENDPOINT = "peers"
 const ADDRESS_ENDPOINT = "addresses"
 const KEY_ENDPOINT = "key"
 
+// Struct used for connection to central server under provided url
 type Server struct {
 	url string
 }
 
+// Creates new instance of Server object with provided url
 func NewServer(url string) Server {
 	return Server{url: url}
 }
 
+// Sends request to server to register private key under the nickname
 func (s Server) RegisterKey(nickname string, key encryption.Key) error {
 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, KEY_ENDPOINT)
 	if err != nil {
@@ -61,6 +64,7 @@ func (s Server) RegisterKey(nickname string, key encryption.Key) error {
 	return errors.New("received wrong response from server")
 }
 
+// Gets list of available peers from server
 func (s Server) GetPeers() ([]string, error) {
 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT)
 	if err != nil {
@@ -88,8 +92,9 @@ func (s Server) GetPeers() ([]string, error) {
 	return splitLines(body), nil
 }
 
-func (s Server) GetPeerKey(peerNickname string) (encryption.Key, error) {
-	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, peerNickname, KEY_ENDPOINT)
+// Gets public key registered under the nickname from server
+func (s Server) GetPeerKey(nickname string) (encryption.Key, error) {
+	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, KEY_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create url of server")
 		return encryption.Key{}, err
@@ -103,11 +108,11 @@ func (s Server) GetPeerKey(peerNickname string) (encryption.Key, error) {
 	bodyBytes, err := io.ReadAll(response.Body)
 	if err != nil {
 		slog.Warn("Failed to get response body", "err", err,
-			"status code", response.StatusCode, "peer", peerNickname)
+			"status code", response.StatusCode, "peer", nickname)
 		return encryption.Key{}, err
 	}
 	if response.StatusCode != http.StatusOK {
-		slog.Warn("Failed to get peer key", "peer", peerNickname,
+		slog.Warn("Failed to get peer key", "peer", nickname,
 			"status code", response.StatusCode)
 		return encryption.Key{}, errors.New("failed to get peer key")
 	}
@@ -119,8 +124,9 @@ func (s Server) GetPeerKey(peerNickname string) (encryption.Key, error) {
 	return encryption.Key(bodyBytes), nil
 }
 
-func (s Server) GetPeerAddresses(peerNickname string) ([]string, error) {
-	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, peerNickname, ADDRESS_ENDPOINT)
+// Gets addresses registered under the nickname from server
+func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
+	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, ADDRESS_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create url of server")
 		return []string{}, err
@@ -134,11 +140,11 @@ func (s Server) GetPeerAddresses(peerNickname string) ([]string, error) {
 	bodyBytes, err := io.ReadAll(response.Body)
 	if err != nil {
 		slog.Warn("Failed to get response body", "err", err,
-			"status code", response.StatusCode, "peer", peerNickname)
+			"status code", response.StatusCode, "peer", nickname)
 		return []string{}, err
 	}
 	if response.StatusCode != http.StatusOK {
-		slog.Warn("Failed to get peer addresses", "peer", peerNickname,
+		slog.Warn("Failed to get peer addresses", "peer", nickname,
 			"status code", response.StatusCode)
 		return []string{}, errors.New("failed to get peer addresses")
 	}
