@@ -24,14 +24,12 @@ func NewServer(url string) Server {
 }
 
 func (s Server) RegisterKey(nickname string, key encryption.Key) error {
-	// Construct registration url
 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, KEY_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create registation url",
 			"base url", s.url, "nickname", nickname, "err", err)
 		return err
 	}
-	// Create registration request
 	request, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(key[:]))
 	if err != nil {
 		slog.Error("Failed to create register request", "err", err)
@@ -48,7 +46,6 @@ func (s Server) RegisterKey(nickname string, key encryption.Key) error {
 		return nil
 	}
 
-	// Error handling
 	defer response.Body.Close()
 	body := ""
 	bodyBytes, err := io.ReadAll(response.Body)
