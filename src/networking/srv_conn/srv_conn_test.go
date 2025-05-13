@@ -205,7 +205,7 @@ func TestGetPeerKeyInternalServerError(t *testing.T) {
 
 // ======================= Server.GetPeerAdresses =======================
 
-func getPeerAdressesServer(t *testing.T, peerNickname string,
+func getPeerAddressesServer(t *testing.T, peerNickname string,
 	returnData []byte, statusCode int) *httptest.Server {
 	return httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +227,7 @@ func TestGetPeersAddressesCorrectResponse(t *testing.T) {
 	address2 := "120.80.24.12"
 	peerAddressesString := fmt.Sprintf("%s\n%s\n", address1, address2)
 	requiredAddresses := []string{address1, address2}
-	testServer := getPeerAdressesServer(t, peerNickname,
+	testServer := getPeerAddressesServer(t, peerNickname,
 		[]byte(peerAddressesString), http.StatusOK)
 	defer testServer.Close()
 
@@ -245,7 +245,7 @@ func TestGetPeersAddressesCorrectResponse(t *testing.T) {
 
 func TestGetPeersAddressesInternalServerError(t *testing.T) {
 	peerNickname := "koziolek"
-	testServer := getPeerAdressesServer(t, peerNickname,
+	testServer := getPeerAddressesServer(t, peerNickname,
 		[]byte("Server error occured"), http.StatusInternalServerError)
 	defer testServer.Close()
 
