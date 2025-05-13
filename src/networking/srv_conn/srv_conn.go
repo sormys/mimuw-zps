@@ -12,6 +12,8 @@ import (
 )
 
 const PEERS_ENDPOINT = "peers"
+const ADDRESS_ENDPOINT = "addresses"
+const KEY_ENDPOINT = "key"
 
 type Server struct {
 	url string
@@ -21,18 +23,9 @@ func NewServer(url string) Server {
 	return Server{url: url}
 }
 
-func splitLines(str string) []string {
-	lines := strings.Split(str, "\n")
-	// Remove empty line from split
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
-}
-
 func (s Server) RegisterKey(nickname string, key encryption.Key) error {
 	// Construct registration url
-	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, "key")
+	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, KEY_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create registation url",
 			"base url", s.url, "nickname", nickname, "err", err)
@@ -72,7 +65,7 @@ func (s Server) RegisterKey(nickname string, key encryption.Key) error {
 }
 
 func (s Server) GetPeers() ([]string, error) {
-	url, err := url.JoinPath(s.url, "peers")
+	url, err := url.JoinPath(s.url, PEERS_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create url for peer endpoint")
 		return []string{}, err
@@ -99,7 +92,7 @@ func (s Server) GetPeers() ([]string, error) {
 }
 
 func (s Server) GetPeerKey(peerNickname string) (encryption.Key, error) {
-	url, err := url.JoinPath(s.url, "peers", peerNickname, "key")
+	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, peerNickname, KEY_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create url of server")
 		return encryption.Key{}, err
@@ -130,7 +123,7 @@ func (s Server) GetPeerKey(peerNickname string) (encryption.Key, error) {
 }
 
 func (s Server) GetPeerAddresses(peerNickname string) ([]string, error) {
-	url, err := url.JoinPath(s.url, "peers", peerNickname, "addresses")
+	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, peerNickname, ADDRESS_ENDPOINT)
 	if err != nil {
 		slog.Error("Failed to create url of server")
 		return []string{}, err
@@ -154,4 +147,13 @@ func (s Server) GetPeerAddresses(peerNickname string) ([]string, error) {
 	}
 	body := string(bodyBytes)
 	return splitLines(body), nil
+}
+
+func splitLines(str string) []string {
+	lines := strings.Split(str, "\n")
+	// Remove empty line from split
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
