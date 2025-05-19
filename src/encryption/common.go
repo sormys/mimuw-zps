@@ -23,7 +23,7 @@ func init() {
 	publicKey = privateKey.Public().(*ecdsa.PublicKey)
 }
 
-func ParsePublicKey(data []byte) *ecdsa.PublicKey {
+func ParsePublicKey(data Key) *ecdsa.PublicKey {
 	var x, y big.Int
 	x.SetBytes(data[:32])
 	y.SetBytes(data[32:])
@@ -47,7 +47,7 @@ func SignatureMessage(data []byte) []byte {
 	return signature
 }
 
-func VerifySignature(data, signature []byte) bool {
+func VerifySignature(data, signature []byte, publicKey *ecdsa.PublicKey) bool {
 	var r, s big.Int
 	r.SetBytes(signature[:32])
 	s.SetBytes(signature[32:])
