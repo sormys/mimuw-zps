@@ -5,10 +5,18 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"log/slog"
 	"math/big"
 )
 
+// uniform name to Key_length
 const ENCRYPTION_KEY_LENGTH = 64
+const PUBLIC_KEY_LENGTH = 64
+const BYTE_LENGTH_32 = 32
+
+type Message []byte
+
+var EMPTY_MESSAGE = Message([]byte{0x00})
 
 type Key = [ENCRYPTION_KEY_LENGTH]byte
 
@@ -18,15 +26,17 @@ var publicKey *ecdsa.PublicKey
 func init() {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		panic("Failed to generate private key")
+		slog.Error("Failed to generate private key", "err", err)
+		return
 	}
 	publicKey = privateKey.Public().(*ecdsa.PublicKey)
 }
 
+// The code below comes from the project description
 func ParsePublicKey(data Key) *ecdsa.PublicKey {
 	var x, y big.Int
-	x.SetBytes(data[:32])
-	y.SetBytes(data[32:])
+	x.SetBytes(data[:BYTE_LENGTH_32])
+	y.SetBytes(data[BYTE_LENGTH_32:])
 	publicKey := ecdsa.PublicKey{
 		Curve: elliptic.P256(),
 		X:     &x,
@@ -35,22 +45,23 @@ func ParsePublicKey(data Key) *ecdsa.PublicKey {
 	return &publicKey
 }
 
-func SignatureMessage(data []byte) []byte {
+func GetMessageSignature(data Message) Message {
 	hashed := sha256.Sum256(data)
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hashed[:])
 	if err != nil {
-		panic("Failed to sign message")
+		slog.Error("Failed to sign message", "err", err)
+		return EMPTY_MESSAGE
 	}
-	signature := make([]byte, 64)
-	r.FillBytes(signature[:32])
-	s.FillBytes(signature[32:])
+	signature := make([]byte, PUBLIC_KEY_LENGTH)
+	r.FillBytes(signature[:BYTE_LENGTH_32])
+	s.FillBytes(signature[BYTE_LENGTH_32:])
 	return signature
 }
 
 func VerifySignature(data, signature []byte, publicKey *ecdsa.PublicKey) bool {
 	var r, s big.Int
-	r.SetBytes(signature[:32])
-	s.SetBytes(signature[32:])
+	r.SetBytes(signature[:BYTE_LENGTH_32])
+	s.SetBytes(signature[BYTE_LENGTH_32:])
 	hashed := sha256.Sum256(data)
 	return ecdsa.Verify(publicKey, hashed[:], &r, &s)
 }

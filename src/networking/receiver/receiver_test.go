@@ -1,8 +1,8 @@
-package receiver_test
+package receiver
 
 import (
 	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/networking/receiver"
+	"mimuw_zps/src/networking/srv_conn"
 	"net"
 	"testing"
 )
@@ -29,8 +29,9 @@ func TestCorrectHello(t *testing.T) {
 	receiver_address := "0.0.0.0:2137"
 	name := "koziolek"
 	var emptyKey encryption.Key
+	server := srv_conn.NewServer("https://galene.org:8448/")
 
-	go receiver.Receiver(receiver_address, name, emptyKey)
+	go Receiver(receiver_address, name, emptyKey, server)
 
 	receiver, err := net.ResolveUDPAddr("udp", receiver_address)
 	if err != nil {
@@ -56,8 +57,9 @@ func TestCorrectHelloReply(t *testing.T) {
 	receiver_address := "0.0.0.0:2137"
 	name := "koziolek"
 	var emptyKey encryption.Key
+	server := srv_conn.NewServer("https://galene.org:8448/")
 
-	go receiver.Receiver(receiver_address, name, emptyKey)
+	go Receiver(receiver_address, name, emptyKey, server)
 
 	receiver, err := net.ResolveUDPAddr("udp", receiver_address)
 	if err != nil {

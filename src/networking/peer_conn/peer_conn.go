@@ -3,15 +3,17 @@ package peer_conn
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"log/slog"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/networking/srv_conn"
+	"mimuw_zps/src/utility"
 	"net"
 )
 
-// / This will be shared memory. It's important to track the current communication stage:
+// This will be shared memory. It's important to track the current communication stage:
 // no knowledge yet, in the middle of the handshake, or post-handshake.
+
+const USER_NAME = "NICPON"
 
 var userMap = map[string]Peer{}
 
@@ -20,11 +22,8 @@ type Peer struct {
 	name      string
 	key       encryption.Key
 	last_id   []byte
-	//temporary commented
-	//stage     string
+	stage     string
 }
-
-type Message []byte
 
 type HandshakeType struct {
 	ID         []byte
@@ -36,10 +35,11 @@ type HandshakeType struct {
 }
 
 var (
-	HELLO        = Message([]byte{0x00})
-	EMPTY_LENGTH = Message([]byte{0x00, 0x00})
-	HELLO_REPLY  = Message([]byte{0x82})
-	ERROR        = Message([]byte{0x81})
+	HELLO        = encryption.Message([]byte{0x00})
+	EMPTY_LENGTH = encryption.Message([]byte{0x00, 0x00})
+	HELLO_REPLY  = encryption.Message([]byte{0x82})
+	ERROR        = encryption.Message([]byte{0x81})
+	my_address   = "0.0.0.0:2137"
 )
 
 func NewPeer(name string, addresses []string, key encryption.Key, last_id []byte) Peer {
@@ -50,24 +50,24 @@ func getExtensions() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x00}
 }
 
-func decodeHandshake(data []byte) HandshakeType {
+func decodeHandshake(data encryption.Message) HandshakeType {
 	id := data[:4]
 	typeMessage := data[4:5]
 	length := data[5:7]
 	extensions := data[7:11]
-	name := data[11 : 11+length[0]]
-	signature := data[11+length[0]:]
+	name := data[11 : 11+utility.GetNumberFromBytes(length)]
+	signature := data[11+utility.GetNumberFromBytes(length):]
 	return HandshakeType{id, typeMessage, length, extensions, name, signature}
 }
 
-func encodeError(id []byte, errorMessage string) []byte {
-	message := make([]byte, 0)
-	message = append(message, id...)
+func encodeError(id utility.ID, errorMessage string) encryption.Message {
+	message := utility.GenerateEmptyBuffor()
+	message = append(message, id[:]...)
 	message = append(message, ERROR...)
 
 	messageByte := []byte(errorMessage)
 	buffor := new(bytes.Buffer)
-	err := binary.Write(buffor, binary.LittleEndian, uint16(len(messageByte)))
+	err := binary.Write(buffor, binary.LittleEndian, utility.GetBytesFromNumber(len(messageByte)))
 	if err != nil {
 		slog.Error("Problem with construct message length", "error", err)
 		return nil
@@ -77,13 +77,13 @@ func encodeError(id []byte, errorMessage string) []byte {
 	return message
 }
 
-func (p Peer) encodeHandshake(typeMessage Message, id []byte) []byte {
+func encodeHandshake(typeMessage encryption.Message, id utility.ID) encryption.Message {
 	extensions := getExtensions()
-	name := []byte(p.name)
+	name := []byte(USER_NAME)
 	length := EMPTY_LENGTH
 
-	message := make([]byte, 0)
-	message = append(message, id...)
+	message := utility.GenerateEmptyBuffor()
+	message = append(message, id[:]...)
 	message = append(message, typeMessage...)
 	message = append(message, length...)
 	message = append(message, extensions...)
@@ -93,8 +93,7 @@ func (p Peer) encodeHandshake(typeMessage Message, id []byte) []byte {
 }
 
 // Currently this function sends a message directly, but I think in future we will create thread for it
-func SendMessage(addr net.Addr, data []byte) error {
-	my_address := "0.0.0.0:2137"
+func SendMessage(addr net.Addr, data encryption.Message) error {
 	conn, err := net.ListenPacket("udp4", my_address)
 	if err != nil {
 		slog.Error("Problem when creating a connection", "error", err)
@@ -103,29 +102,35 @@ func SendMessage(addr net.Addr, data []byte) error {
 	defer conn.Close()
 
 	_, err = conn.WriteTo(data, addr)
-	fmt.Println("Sent data to", addr)
 
 	if err != nil {
 		slog.Error("Inccorect send message", "error", err)
 		return err
 	}
+
+	slog.Info("Sent data to", "address", addr)
+
 	return nil
 }
 
 // We invoke this function when we want start communication with new server/peer.
 // Function return ID of request.
-func (p Peer) SendHandshake(addr net.Addr) []byte {
+func SendHandshake(MessageType []byte, addr net.Addr) utility.ID {
 
-	id := make([]byte, 4)
-	message := p.encodeHandshake(HELLO, id)
+	if !(bytes.Equal(MessageType, HELLO) || bytes.Equal(MessageType, HELLO_REPLY)) {
+		slog.Error("Incorrect MessageType during sending Handshake", "MessageType", string(MessageType))
+		return utility.ID{}
+	}
 
-	data := encryption.SignatureMessage(message)
+	id := utility.GenerateID()
+	message := encodeHandshake(MessageType, id)
 
+	data := encryption.GetMessageSignature(encryption.Message(message))
 	err := SendMessage(addr, data)
 
 	if err != nil {
 		slog.Error("Incorrect sending message", "error", err)
-		return nil
+		return utility.ID{}
 	}
 	return id
 }
@@ -133,7 +138,7 @@ func (p Peer) SendHandshake(addr net.Addr) []byte {
 // This function is called when we receive ReplyHandshake.
 // It verfies that the response ID matches the one we sent.
 // Return true if reply is valid
-func ReceiveReplyHandshake(buf []byte) bool {
+func ReceiveReplyHandshake(buf encryption.Message) bool {
 
 	handshake := decodeHandshake(buf)
 	id := userMap[string(handshake.name)].last_id
@@ -148,12 +153,7 @@ func ReceiveReplyHandshake(buf []byte) bool {
 
 // This function is called when the main receiver recognize, that request was "Hello".
 // It queries the server for peer's key, verifies it and responds to the sender with "HelloReply"
-func (p Peer) ReceiveHandshake(addr net.Addr, data []byte) bool {
-
-	// How should we obtain the Server Instance here? Creating a new object is a temporary solution
-	// Alternatively, should we send a message via a channel to the sending thread
-	url := "https://galene.org:8448/"
-	server := srv_conn.NewServer(url)
+func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Server) bool {
 
 	request := decodeHandshake(data)
 	key, error := server.GetPeerKey(string(request.name))
@@ -164,17 +164,18 @@ func (p Peer) ReceiveHandshake(addr net.Addr, data []byte) bool {
 	}
 
 	if !encryption.VerifySignature(data, request.signature, encryption.ParsePublicKey(key)) {
-		SendMessage(addr, encodeError(data[:4], "Signature verification failed"))
+		SendMessage(addr, encodeError(utility.GetMessageID(data), "Signature verification failed"))
 		return false
 	}
 
-	data = p.encodeHandshake(HELLO_REPLY, data[:4])
+	data = encodeHandshake(HELLO_REPLY, utility.GetMessageID(data))
 	conn := SendMessage(addr, data)
 
 	if conn == nil {
-		slog.Error("Fail to response to handshake", "error", error)
+		slog.Error("Fail to respond to handshake", "error", error)
 		return false
 	}
-	fmt.Println("Sent handshake response:", data)
+
+	slog.Info("Handshake sent correctly", "address", addr)
 	return true
 }
