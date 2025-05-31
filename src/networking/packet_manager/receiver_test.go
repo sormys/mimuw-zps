@@ -1,4 +1,4 @@
-package receiver
+package packet_manager
 
 import (
 	"mimuw_zps/src/encryption"
@@ -26,12 +26,9 @@ func correctRequest(typeMessage []byte) []byte {
 // ========================= Receiver.Receiver =========================
 func TestCorrectHello(t *testing.T) {
 	sender := "0.0.0.0:2138"
-	receiver_address := "0.0.0.0:2137"
-	name := "koziolek"
 	var emptyKey encryption.Key
-	server := srv_conn.NewServer("https://galene.org:8448/")
-
-	go Receiver(receiver_address, name, emptyKey, server)
+	mock.dsfa
+	go Receiver()
 
 	receiver, err := net.ResolveUDPAddr("udp", receiver_address)
 	if err != nil {

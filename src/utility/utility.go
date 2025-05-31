@@ -59,3 +59,15 @@ func IsIDEmpty(id ID) bool {
 	IDEmpty := ID{}
 	return bytes.Equal(id[:], IDEmpty[:])
 }
+
+// Check if value stored in int is equal to value stored in uint16.
+// Helpful when using len() and comparing to uint16 length value from message
+func EqualIntUint16(valInt int, valUint16 uint16) bool {
+	if valInt < 0 {
+		return false
+	}
+	if valInt > 0xFFFF {
+		return false
+	}
+	return uint16(valInt) == valUint16
+}
