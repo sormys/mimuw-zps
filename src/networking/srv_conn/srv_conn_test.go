@@ -45,6 +45,7 @@ func registerKeyServer(t *testing.T, peerNickname string,
 func TestRegisterKeyCorrectResponse(t *testing.T) {
 	peerNickname := "test_peer"
 	peerKey := encryption.Key{}
+
 	for i := range encryption.KEY_LENGTH {
 		peerKey[i] = byte(i + 1)
 	}
