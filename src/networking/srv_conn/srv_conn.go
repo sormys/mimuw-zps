@@ -116,7 +116,7 @@ func (s Server) GetPeerKey(nickname string) (encryption.Key, error) {
 			"status code", response.StatusCode)
 		return encryption.Key{}, errors.New("failed to get peer key")
 	}
-	if len(bodyBytes) != encryption.ENCRYPTION_KEY_LENGTH {
+	if len(bodyBytes) != encryption.KEY_LENGTH {
 		slog.Warn("Received key from server of wrong length",
 			"length", len(bodyBytes))
 		return encryption.Key{}, errors.New("wrong key from server")
