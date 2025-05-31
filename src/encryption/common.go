@@ -67,6 +67,9 @@ func GetSignature(data Message) Signature {
 
 func VerifySignature(data, signature []byte, publicKey *ecdsa.PublicKey) bool {
 	var r, s big.Int
+	if len(signature) != 64 {
+		return false
+	}
 	r.SetBytes(signature[:BYTE_LENGTH_32])
 	s.SetBytes(signature[BYTE_LENGTH_32:])
 	hashed := sha256.Sum256(data)
