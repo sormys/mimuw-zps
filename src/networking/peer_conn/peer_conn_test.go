@@ -135,8 +135,8 @@ func TestEncodeDecodeHandshake(t *testing.T) {
 
 	mess := encodeHandshake(typeMessage, id)
 	signature := encryption.GetSignature(mess)
-	message := append(mess, signature...)
-	data := append(message, signature...)
+	message := append(mess, signature[:]...)
+	data := append(message, signature[:]...)
 
 	decode := decodeHandshake(data)
 
@@ -152,7 +152,7 @@ func TestEncodeDecodeHandshake(t *testing.T) {
 		return
 	}
 
-	if bytes.Equal(decode.signature[:], encryption.Signature{}) {
+	if bytes.Equal(decode.signature[:], (&encryption.Signature{})[:]) {
 		t.Errorf(
 			"Incorrect decode signature, got  empty Siganture")
 		return

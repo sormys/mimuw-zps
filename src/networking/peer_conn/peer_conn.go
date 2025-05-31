@@ -142,7 +142,7 @@ func SendHandshake(MessageType []byte, addr net.Addr) utility.ID {
 
 	message := encodeHandshake(MessageType, id)
 	signature := encryption.GetSignature(message)
-	data := append(message, signature...)
+	data := append(message, signature[:]...)
 	err := SendMessage(addr, data)
 
 	if err != nil {

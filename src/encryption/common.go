@@ -10,17 +10,16 @@ import (
 )
 
 // uniform name to Key_length
-const ENCRYPTION_KEY_LENGTH = 64
-const PUBLIC_KEY_LENGTH = 64
+const KEY_LENGTH = 64
 const BYTE_LENGTH_32 = 32
 
 type Message []byte
 type TypeMessage []byte
-type Signature []byte
+type Signature = [KEY_LENGTH]byte
 
-var EMPTY_SIGNATURE = Signature([]byte{0x00})
+var EMPTY_SIGNATURE = Signature{}
 
-type Key = [ENCRYPTION_KEY_LENGTH]byte
+type Key = [KEY_LENGTH]byte
 
 var privateKey *ecdsa.PrivateKey
 var publicKey *ecdsa.PublicKey
@@ -59,17 +58,17 @@ func GetSignature(data Message) Signature {
 		slog.Error("Failed to sign message", "err", err)
 		return EMPTY_SIGNATURE
 	}
-	signature := make([]byte, PUBLIC_KEY_LENGTH)
+	signature := make([]byte, KEY_LENGTH)
 	r.FillBytes(signature[:BYTE_LENGTH_32])
 	s.FillBytes(signature[BYTE_LENGTH_32:])
-	return signature
+
+	var a Signature
+	copy(a[:], signature)
+	return a
 }
 
-func VerifySignature(data, signature []byte, publicKey *ecdsa.PublicKey) bool {
+func VerifySignature(data []byte, signature Signature, publicKey *ecdsa.PublicKey) bool {
 	var r, s big.Int
-	if len(signature) != 64 {
-		return false
-	}
 	r.SetBytes(signature[:BYTE_LENGTH_32])
 	s.SetBytes(signature[BYTE_LENGTH_32:])
 	hashed := sha256.Sum256(data)

@@ -45,7 +45,7 @@ func registerKeyServer(t *testing.T, peerNickname string,
 func TestRegisterKeyCorrectResponse(t *testing.T) {
 	peerNickname := "test_peer"
 	peerKey := encryption.Key{}
-	for i := range encryption.ENCRYPTION_KEY_LENGTH {
+	for i := range encryption.KEY_LENGTH {
 		peerKey[i] = byte(i + 1)
 	}
 	testServer := registerKeyServer(t, peerNickname, peerKey,
@@ -63,7 +63,7 @@ func TestRegisterKeyCorrectResponse(t *testing.T) {
 func TestRegisterKeyServerError(t *testing.T) {
 	peerNickname := "test_peer"
 	peerKey := encryption.Key{}
-	for i := range encryption.ENCRYPTION_KEY_LENGTH {
+	for i := range encryption.KEY_LENGTH {
 		peerKey[i] = byte(i + 1)
 	}
 	testServer := registerKeyServer(t, peerNickname, peerKey,
@@ -151,7 +151,7 @@ func getPeerKeyServer(t *testing.T, peerNickname string,
 func TestGetPeerKeyCorrectResponse(t *testing.T) {
 	peerNickname := "pudzian"
 	expectedPeerKey := encryption.Key{}
-	for i := range encryption.ENCRYPTION_KEY_LENGTH {
+	for i := range encryption.KEY_LENGTH {
 		expectedPeerKey[i] = byte(i + 1)
 	}
 	testServer := getPeerKeyServer(t, peerNickname, expectedPeerKey[:],
