@@ -15,8 +15,10 @@ const PUBLIC_KEY_LENGTH = 64
 const BYTE_LENGTH_32 = 32
 
 type Message []byte
+type TypeMessage []byte
+type Signature []byte
 
-var EMPTY_MESSAGE = Message([]byte{0x00})
+var EMPTY_SIGNATURE = Signature([]byte{0x00})
 
 type Key = [ENCRYPTION_KEY_LENGTH]byte
 
@@ -24,12 +26,17 @@ var privateKey *ecdsa.PrivateKey
 var publicKey *ecdsa.PublicKey
 
 func init() {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		slog.Error("Failed to generate private key", "err", err)
 		return
 	}
+	privateKey = privKey
 	publicKey = privateKey.Public().(*ecdsa.PublicKey)
+}
+
+func GetMyPublicKey() ecdsa.PublicKey {
+	return *publicKey
 }
 
 // The code below comes from the project description
@@ -45,12 +52,12 @@ func ParsePublicKey(data Key) *ecdsa.PublicKey {
 	return &publicKey
 }
 
-func GetMessageSignature(data Message) Message {
+func GetSignature(data Message) Signature {
 	hashed := sha256.Sum256(data)
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hashed[:])
 	if err != nil {
 		slog.Error("Failed to sign message", "err", err)
-		return EMPTY_MESSAGE
+		return EMPTY_SIGNATURE
 	}
 	signature := make([]byte, PUBLIC_KEY_LENGTH)
 	r.FillBytes(signature[:BYTE_LENGTH_32])

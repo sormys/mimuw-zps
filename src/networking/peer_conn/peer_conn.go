@@ -10,39 +10,37 @@ import (
 	"net"
 )
 
-// This will be shared memory. It's important to track the current communication stage:
-// no knowledge yet, in the middle of the handshake, or post-handshake.
-
 const USER_NAME = "NICPON"
 
 var userMap = map[string]Peer{}
 
+// Stage can me ENUM, for example: in the middle of the handshake, or post-handshake
 type Peer struct {
 	addresses []string
 	name      string
 	key       encryption.Key
-	last_id   []byte
+	last_id   utility.ID
 	stage     string
 }
 
 type HandshakeType struct {
-	ID         []byte
-	typeM      []byte
-	length     []byte
+	ID         utility.ID
+	typeM      encryption.TypeMessage
+	length     uint16
 	extensions []byte
-	name       []byte
-	signature  []byte
+	name       string
+	signature  encryption.Signature
 }
 
 var (
-	HELLO        = encryption.Message([]byte{0x00})
-	EMPTY_LENGTH = encryption.Message([]byte{0x00, 0x00})
-	HELLO_REPLY  = encryption.Message([]byte{0x82})
-	ERROR        = encryption.Message([]byte{0x81})
+	HELLO        = encryption.TypeMessage([]byte{0x00})
+	EMPTY_LENGTH = encryption.TypeMessage([]byte{0x00, 0x00})
+	HELLO_REPLY  = encryption.TypeMessage([]byte{0x82})
+	ERROR        = encryption.TypeMessage([]byte{0x81})
 	my_address   = "0.0.0.0:2137"
 )
 
-func NewPeer(name string, addresses []string, key encryption.Key, last_id []byte) Peer {
+func NewPeer(name string, addresses []string, key encryption.Key, last_id utility.ID) Peer {
 	return Peer{name: name, addresses: addresses, key: key, last_id: last_id}
 }
 
@@ -50,6 +48,14 @@ func getExtensions() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x00}
 }
 
+// Finds a Peer by his address, then return thei last_id
+//	to verify if the sent ID matches the reveiced ID
+
+func getLastIDPeer(addr net.Addr) utility.ID {
+	return utility.ID{}
+}
+
+// Convert raw data to struct
 func decodeHandshake(data encryption.Message) HandshakeType {
 	id := data[:4]
 	typeMessage := data[4:5]
@@ -57,9 +63,15 @@ func decodeHandshake(data encryption.Message) HandshakeType {
 	extensions := data[7:11]
 	name := data[11 : 11+utility.GetNumberFromBytes(length)]
 	signature := data[11+utility.GetNumberFromBytes(length):]
-	return HandshakeType{id, typeMessage, length, extensions, name, signature}
+	return HandshakeType{utility.ID(id),
+		encryption.TypeMessage(typeMessage),
+		utility.GetNumberFromBytes(length),
+		extensions,
+		string(name),
+		encryption.Signature(signature)}
 }
 
+// Creates an message error that includes from the given ID and description of the error.
 func encodeError(id utility.ID, errorMessage string) encryption.Message {
 	message := utility.GenerateEmptyBuffor()
 	message = append(message, id[:]...)
@@ -77,10 +89,11 @@ func encodeError(id utility.ID, errorMessage string) encryption.Message {
 	return message
 }
 
-func encodeHandshake(typeMessage encryption.Message, id utility.ID) encryption.Message {
+// Creates an Handshake that includes from the given ID and messageType HELLO or HELLO_REPLY.
+func encodeHandshake(typeMessage encryption.TypeMessage, id utility.ID) encryption.Message {
 	extensions := getExtensions()
 	name := []byte(USER_NAME)
-	length := EMPTY_LENGTH
+	length := utility.GetBytesFromNumber(len(name))
 
 	message := utility.GenerateEmptyBuffor()
 	message = append(message, id[:]...)
@@ -123,9 +136,13 @@ func SendHandshake(MessageType []byte, addr net.Addr) utility.ID {
 	}
 
 	id := utility.GenerateID()
-	message := encodeHandshake(MessageType, id)
+	if !utility.IsIDEmpty(getLastIDPeer(addr)) {
+		id = getLastIDPeer(addr)
+	}
 
-	data := encryption.GetMessageSignature(encryption.Message(message))
+	message := encodeHandshake(MessageType, id)
+	signature := encryption.GetSignature(message)
+	data := append(message, signature...)
 	err := SendMessage(addr, data)
 
 	if err != nil {
@@ -141,9 +158,19 @@ func SendHandshake(MessageType []byte, addr net.Addr) utility.ID {
 func ReceiveReplyHandshake(buf encryption.Message) bool {
 
 	handshake := decodeHandshake(buf)
-	id := userMap[string(handshake.name)].last_id
+	peer, ok := userMap[string(handshake.name)]
+	if !ok {
+		slog.Error("Username does not exist", "name", handshake.name)
+		return false
+	}
 
-	if bytes.Equal(handshake.ID, id) {
+	id := peer.last_id
+	if utility.IsIDEmpty(id) {
+		slog.Error("Program does not send Handshake to this peer", "name", handshake.name)
+		return false
+	}
+
+	if bytes.Equal(handshake.ID[:], id[:]) {
 		slog.Error("Hello ID doesnt match to HelloReply ID", "error", "ID mismatch")
 		return false
 	}

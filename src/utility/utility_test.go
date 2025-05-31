@@ -1,6 +1,7 @@
 package utility
 
 import (
+	"bytes"
 	"mimuw_zps/src/encryption"
 	"testing"
 )
@@ -23,15 +24,7 @@ func createMessage(id ID) encryption.Message {
 }
 
 func equalID(id1 ID, id2 ID) bool {
-	if len(id1) != len(id2) {
-		return false
-	}
-	for i := range id1 {
-		if id1[i] != id2[i] {
-			return false
-		}
-	}
-	return true
+	return bytes.Equal(id1[:], id2[:])
 }
 
 func TestCorrectData(t *testing.T) {
