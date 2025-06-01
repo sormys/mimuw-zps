@@ -16,8 +16,8 @@ func GetMessageID(data []byte) ID {
 }
 
 // return Type message from messsage
-func GetMessageType(data []byte) uint16 {
-	return GetNumberFromBytes(data[4:5])
+func GetMessageType(data []byte) uint8 {
+	return uint8(data[4])
 }
 
 // Converts a byte slice (up to 2 bytes) to a uint
@@ -69,5 +69,6 @@ func EqualIntUint16(valInt int, valUint16 uint16) bool {
 	if valInt > 0xFFFF {
 		return false
 	}
-	return uint16(valInt) == valUint16
+	convertedValue := uint16(valInt)
+	return convertedValue == valUint16
 }

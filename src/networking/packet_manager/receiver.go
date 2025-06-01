@@ -10,7 +10,7 @@ const BUF_SIZE = 2048
 
 // Receives a message (sigle UDP packet) and sends received initialy validated
 // data to writer via writerChan.
-func Receiver(conn net.UDPConn, writerChan chan *networking.ReceivedMessageData) {
+func Receiver(conn net.PacketConn, writerChan chan *networking.ReceivedMessageData) {
 	buf := make([]byte, BUF_SIZE)
 	for {
 		n, addr, err := conn.ReadFrom(buf)

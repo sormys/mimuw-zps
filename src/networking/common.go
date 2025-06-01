@@ -22,16 +22,16 @@ const (
 	NO_DATUM      MessageType = "NoDatum"
 )
 
-var TypeMap = map[uint16]MessageType{
-	0x0000: PING,
-	0x0001: HELLO,
-	0x0002: ROOT_REQUEST,
-	0x0003: DATUM_REQUEST,
-	0x0129: ERROR,
-	0x0130: HELLO_REPLY,
-	0x0131: ROOT_REPLY,
-	0x0132: DATUM,
-	0x0133: NO_DATUM,
+var TypeMap = map[uint8]MessageType{
+	0x00: PING,
+	0x01: HELLO,
+	0x02: ROOT_REQUEST,
+	0x03: DATUM_REQUEST,
+	0x81: ERROR,
+	0x82: HELLO_REPLY,
+	0x83: ROOT_REPLY,
+	0x84: DATUM,
+	0x85: NO_DATUM,
 }
 
 type ReceivedMessageData struct {

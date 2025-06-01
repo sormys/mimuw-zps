@@ -1,78 +1,130 @@
 package packet_manager
 
 import (
-	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/networking/srv_conn"
+	"bytes"
+	"mimuw_zps/src/networking"
+	"mimuw_zps/src/utility"
 	"net"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/mock"
 )
 
-func correctRequest(typeMessage []byte) []byte {
-	id := make([]byte, 4)
-	extensions := []byte{0x00, 0x00, 0x00, 0x00}
-	name := []byte("Mozart")
-	length := []byte{0x00, 0x00}
+func createMessage(typeMessage networking.MessageType, data []byte, id utility.ID) []byte {
+	typeID := uint8(0x00)
+	length := utility.GetBytesFromNumber(len(data))
+	for v, k := range networking.TypeMap {
+		if k == typeMessage {
+			typeID = v
+			break
+		}
+	}
 
 	message := make([]byte, 0)
-	message = append(message, id...)
-	message = append(message, typeMessage...)
+	message = append(message, id[:]...)
+	message = append(message, byte(typeID))
 	message = append(message, length...)
-	message = append(message, extensions...)
-	message = append(message, name...)
+	message = append(message, data...)
 
 	return message
 }
 
+type mockUDPConn struct {
+	mock.Mock
+}
+
+func (m *mockUDPConn) ReadFrom(buf []byte) (int, net.Addr, error) {
+	args := m.Called(buf)
+	copy(buf, []byte(args.String(0)))
+	return args.Int(1), &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2138}, args.Error(3)
+}
+
+func (m *mockUDPConn) WriteTo(b []byte, addr net.Addr) (int, error) { return 0, nil }
+func (m *mockUDPConn) Close() error                                 { return nil }
+func (m *mockUDPConn) LocalAddr() net.Addr                          { return &net.UDPAddr{} }
+func (m *mockUDPConn) SetDeadline(t time.Time) error                { return nil }
+func (m *mockUDPConn) SetReadDeadline(t time.Time) error            { return nil }
+func (m *mockUDPConn) SetWriteDeadline(t time.Time) error           { return nil }
+
 // ========================= Receiver.Receiver =========================
 func TestCorrectHello(t *testing.T) {
-	sender := "0.0.0.0:2138"
-	var emptyKey encryption.Key
-	mock.dsfa
-	go Receiver()
+	fakeChannel := make(chan *networking.ReceivedMessageData)
+	mockUDPConn := new(mockUDPConn)
+	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2138}
+	messType := networking.HELLO_REPLY
+	data := []byte{0x00, 0x00, 0x00, 0x00}                 // extensions
+	data = append(data, []byte("TestName")...)             // name
+	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
+	id := utility.GenerateID()
+	msg := createMessage(messType, data, id)
+	mockUDPConn.On("ReadFrom", mock.Anything).Return(string(msg), len([]byte(msg)), senderAddr, nil)
 
-	receiver, err := net.ResolveUDPAddr("udp", receiver_address)
-	if err != nil {
-		t.Fatalf("Failed to resolve UDP address: %v", err)
-	}
-	testReceiver, err := net.ListenPacket("udp", sender)
-	if err != nil {
-		t.Errorf("Fail during creating socket")
-	}
+	go Receiver(mockUDPConn, fakeChannel)
 
-	hello := []byte{0x00}
-	n, err := testReceiver.WriteTo(correctRequest(hello), receiver)
-
-	defer testReceiver.Close()
-
-	if n <= 0 || err != nil {
-		t.Errorf("Failed to send correct Request")
+	select {
+	case message := <-fakeChannel:
+		if message.ID != id {
+			t.Errorf("Received message id does not match\nexpected: '%s'\ngot: '%s'", id, message.ID)
+		}
+		if message.Addr.String() != senderAddr.String() {
+			t.Errorf("Received message sender does not match \nexpected: '%s'\ngot: '%s'", senderAddr, message.Addr)
+		}
+		if message.Err != nil {
+			t.Errorf("Received error when message arrived properly\nexpected: nil\ngot: '%s'", message.Err)
+		}
+		if message.MessType != messType {
+			t.Errorf("Received wrong message type\nexpected: '%s'\ngot: '%s'", messType, message.MessType)
+		}
+		if !utility.EqualIntUint16(len(data), message.Length) {
+			t.Errorf("Received wrong message length\nexpected: %d\ngot:%d", len(data), message.Length)
+		}
+		if !bytes.Equal(message.Data, data) {
+			t.Errorf("Received wrong message conent\nexpected: '%s'\ngot: '%s'", data, message.Data)
+		}
+	case <-time.After(1 * time.Second):
+		t.Error("No message received.")
 	}
 }
 
-func TestCorrectHelloReply(t *testing.T) {
-	sender := "0.0.0.0:2138"
-	receiver_address := "0.0.0.0:2137"
-	name := "koziolek"
-	var emptyKey encryption.Key
-	server := srv_conn.NewServer("https://galene.org:8448/")
+func TestCorrectMultipleMessages(t *testing.T) {
+	fakeChannel := make(chan *networking.ReceivedMessageData)
+	mockUDPConn := new(mockUDPConn)
+	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2138}
+	messType := networking.HELLO_REPLY
+	data := []byte{0x00, 0x00, 0x00, 0x00}                 // extensions
+	data = append(data, []byte("TestName")...)             // name
+	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
+	id := utility.GenerateID()
+	msg := createMessage(messType, data, id)
+	mockUDPConn.On("ReadFrom", mock.Anything).Return(string(msg), len([]byte(msg)), senderAddr, nil)
 
-	go Receiver(receiver_address, name, emptyKey, server)
+	go Receiver(mockUDPConn, fakeChannel)
 
-	receiver, err := net.ResolveUDPAddr("udp", receiver_address)
-	if err != nil {
-		t.Fatalf("Failed to resolve UDP address: %v", err)
-	}
-	testReceiver, err := net.ListenPacket("udp", sender)
-	if err != nil {
-		t.Errorf("Fail during creating socket")
-	}
+	for range 100 {
+		select {
+		case message := <-fakeChannel:
+			if message.ID != id {
+				t.Errorf("Received message id does not match\nexpected: '%s'\ngot: '%s'", id, message.ID)
+			}
+			if message.Addr.String() != senderAddr.String() {
+				t.Errorf("Received message sender does not match \nexpected: '%s'\ngot: '%s'", senderAddr, message.Addr)
+			}
+			if message.Err != nil {
+				t.Errorf("Received error when message arrived properly\nexpected: nil\ngot: '%s'", message.Err)
+			}
+			if message.MessType != messType {
+				t.Errorf("Received wrong message type\nexpected: '%s'\ngot: '%s'", messType, message.MessType)
+			}
+			if !utility.EqualIntUint16(len(data), message.Length) {
+				t.Errorf("Received wrong message length\nexpected: %d\ngot:%d", len(data), message.Length)
+			}
+			if !bytes.Equal(message.Data, data) {
+				t.Errorf("Received wrong message conent\nexpected: '%s'\ngot: '%s'", data, message.Data)
+			}
+		case <-time.After(1 * time.Second):
+			t.Error("No message received.")
+		}
 
-	helloReply := []byte{0x00}
-	n, err := testReceiver.WriteTo(correctRequest(helloReply), receiver)
-
-	defer testReceiver.Close()
-
-	if n <= 0 || err != nil {
-		t.Errorf("Failed to send correct Request")
 	}
 }
