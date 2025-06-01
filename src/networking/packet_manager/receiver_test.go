@@ -50,7 +50,7 @@ func (m *mockRecvUDPConn) SetWriteDeadline(t time.Time) error           { return
 
 // ========================= Receiver.Receiver =========================
 
-func TestCorrectMessages(t *testing.T) {
+func TestReceiverCorrectMessages(t *testing.T) {
 	// mesage data
 	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
 	messType := networking.HELLO_REPLY
@@ -91,11 +91,11 @@ func TestCorrectMessages(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Error("No message received.")
 		}
-
 	}
+	mockUDPConn.AssertExpectations(t)
 }
 
-func TestIncorrectLenMessages(t *testing.T) {
+func TestReceiverIncorrectLenMessages(t *testing.T) {
 	// mesage data
 	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
 	messType := networking.HELLO_REPLY
@@ -121,11 +121,11 @@ func TestIncorrectLenMessages(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Error("No message received.")
 		}
-
 	}
+	mockUDPConn.AssertExpectations(t)
 }
 
-func TestIngoresReadErrMessages(t *testing.T) {
+func TestReceiverIngoresReadErrMessages(t *testing.T) {
 	// mesage data
 	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
 	messType := networking.HELLO_REPLY
@@ -154,7 +154,7 @@ func TestIngoresReadErrMessages(t *testing.T) {
 	mockUDPConn.AssertExpectations(t)
 }
 
-func TestAwaitsMessages(t *testing.T) {
+func TestReceiverAwaitsMessages(t *testing.T) {
 	// mesage data
 	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
 	messType := networking.HELLO_REPLY
@@ -163,7 +163,7 @@ func TestAwaitsMessages(t *testing.T) {
 	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
 	id := utility.GenerateID()
 	msg := createMessage(messType, data, len(data), id)
-	timeout := time.Second / 3
+	timeout := time.Millisecond * 10
 
 	// Mock objects
 	fakeChannel := make(chan *networking.ReceivedMessageData)
@@ -205,4 +205,5 @@ func TestAwaitsMessages(t *testing.T) {
 	case <-time.After(2 * timeout):
 		t.Error("No message received.")
 	}
+	mockUDPConn.AssertExpectations(t)
 }
