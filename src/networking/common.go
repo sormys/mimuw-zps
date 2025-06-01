@@ -82,7 +82,7 @@ func StoreReceivedMessageData(message encryption.Message, addr net.Addr) Receive
 	}
 	lengthBytes := message[5:7]
 	length := utility.GetNumberFromBytes(lengthBytes)
-	if utility.EqualIntUint16(len(message), 11+length) {
+	if !utility.EqualIntUint16(len(message), MIN_MESSAGE_SIZE+length) {
 		return ReceivedMessageData{ID: id, Err: errors.New(
 			"received message with incorrect data (declared length do not match)")}
 	}

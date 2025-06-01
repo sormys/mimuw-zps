@@ -9,7 +9,8 @@ import (
 // via writerChan about potential retries needed in the future. When an error
 // occurs during sending the message, no further retries will be performed and
 // the request is deemed failed.
-func Sender(conn net.PacketConn, requestChan <-chan *networking.SendRequest,
+func Sender(conn net.PacketConn,
+	requestChan <-chan *networking.SendRequest,
 	writerChan chan<- *networking.SendRequest) {
 	for {
 		request := <-requestChan
