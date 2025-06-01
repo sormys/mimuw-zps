@@ -51,7 +51,7 @@ type SendRequest struct {
 	Addr            net.Addr
 	Message         encryption.Message
 	MessRetryPolicy RetryPolicy
-	CallbackChan    chan<- *ReceivedMessageData
+	CallbackChan    chan<- ReceivedMessageData
 }
 
 const MIN_MESSAGE_SIZE = 7

@@ -48,8 +48,6 @@ func (m *mockRecvUDPConn) SetDeadline(t time.Time) error                { return
 func (m *mockRecvUDPConn) SetReadDeadline(t time.Time) error            { return nil }
 func (m *mockRecvUDPConn) SetWriteDeadline(t time.Time) error           { return nil }
 
-// ========================= Receiver.Receiver =========================
-
 func TestReceiverCorrectMessages(t *testing.T) {
 	// mesage data
 	senderAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}

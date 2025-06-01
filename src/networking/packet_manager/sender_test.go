@@ -49,19 +49,19 @@ func TestSenderCorrectMessage(t *testing.T) {
 	// send request
 	retryPolicyFn := func() (time.Duration, error) { return time.Hour, nil }
 	retryPolicy := RetryPolicyMock{retryPolicyFn}
-	callbackChan := make(chan *networking.ReceivedMessageData)
+	callbackChan := make(chan networking.ReceivedMessageData)
 	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
 		MessRetryPolicy: retryPolicy, CallbackChan: callbackChan}
 
 	// Mock objects
-	reqChannel := make(chan *networking.SendRequest)
-	writerChannel := make(chan *networking.SendRequest)
+	reqChannel := make(chan networking.SendRequest)
+	writerChannel := make(chan networking.SendRequest)
 	mockUDPConn := new(mockSendUDPConn)
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), len(sendReq.Message), nil).Once()
 
 	go Sender(mockUDPConn, reqChannel, writerChannel)
-	reqChannel <- &sendReq
+	reqChannel <- sendReq
 
 	select {
 	case recvReq := <-writerChannel:
@@ -97,20 +97,20 @@ func TestSenderFailedToSend(t *testing.T) {
 	// send request
 	retryPolicyFn := func() (time.Duration, error) { return time.Hour, nil }
 	retryPolicy := RetryPolicyMock{retryPolicyFn}
-	callbackChan := make(chan *networking.ReceivedMessageData)
+	callbackChan := make(chan networking.ReceivedMessageData)
 	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
 		MessRetryPolicy: retryPolicy, CallbackChan: callbackChan}
 	err := errors.New("Fake send error")
 
 	// Mock objects
-	reqChannel := make(chan *networking.SendRequest)
-	writerChannel := make(chan *networking.SendRequest)
+	reqChannel := make(chan networking.SendRequest)
+	writerChannel := make(chan networking.SendRequest)
 	mockUDPConn := new(mockSendUDPConn)
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), 0, err).Once()
 
 	go Sender(mockUDPConn, reqChannel, writerChannel)
-	reqChannel <- &sendReq
+	reqChannel <- sendReq
 
 	select {
 	case <-writerChannel:
@@ -139,20 +139,20 @@ func TestSenderAwaitsMessages(t *testing.T) {
 	// send request
 	retryPolicyFn := func() (time.Duration, error) { return time.Hour, nil }
 	retryPolicy := RetryPolicyMock{retryPolicyFn}
-	callbackChan := make(chan *networking.ReceivedMessageData)
+	callbackChan := make(chan networking.ReceivedMessageData)
 	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
 		MessRetryPolicy: retryPolicy, CallbackChan: callbackChan}
 
 	// Mock objects
-	reqChannel := make(chan *networking.SendRequest)
-	writerChannel := make(chan *networking.SendRequest)
+	reqChannel := make(chan networking.SendRequest)
+	writerChannel := make(chan networking.SendRequest)
 	mockUDPConn := new(mockSendUDPConn)
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), len(sendReq.Message), nil).Once().WaitUntil(
 		time.After(2 * timeout))
 
 	go Sender(mockUDPConn, reqChannel, writerChannel)
-	reqChannel <- &sendReq
+	reqChannel <- sendReq
 
 	select {
 	case <-writerChannel:

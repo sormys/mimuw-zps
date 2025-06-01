@@ -2,6 +2,7 @@ package packet_manager
 
 import (
 	"container/heap"
+	"log/slog"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
 	"time"
@@ -22,8 +23,10 @@ type retryTask struct {
 // https://pkg.go.dev/container/heap
 type TaskHeap []retryTask
 
-func (h TaskHeap) Len() int           { return len(h) }
-func (h TaskHeap) Less(i, j int) bool { return h[j].replyDeadline.After(h[i].replyDeadline) }
+func (h TaskHeap) Len() int { return len(h) }
+
+// FIXME(sormys) check if order is correct
+func (h TaskHeap) Less(i, j int) bool { return h[i].replyDeadline.After(h[j].replyDeadline) }
 func (h TaskHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *TaskHeap) Push(x any) {
@@ -60,10 +63,10 @@ func createRetryTask(request *networking.SendRequest, id utility.ID) (retryTask,
 //     channel provided in retry request - handling of the retry request ends here
 //   - Sends send requests to sender via senderChan when retry deadline of
 //     received retry request has passed without receving a reply
-func MessageWriter(
-	senderChan chan<- *networking.SendRequest,
-	retryReqChan <-chan *networking.SendRequest,
-	receiverChan chan *networking.ReceivedMessageData) {
+func Writer(
+	senderChan chan<- networking.SendRequest,
+	retryReqChan <-chan networking.SendRequest,
+	receiverChan chan networking.ReceivedMessageData) {
 	messagesMap := map[utility.ID]messageStatus{}
 	retryHeap := &TaskHeap{}
 	heap.Init(retryHeap)
@@ -86,18 +89,20 @@ func MessageWriter(
 		case request := <-retryReqChan:
 			// TODO(sormys) handle case where reply is received before the retry request
 			id := utility.GetMessageID(request.Message)
-			task, err := createRetryTask(request, id)
+			task, err := createRetryTask(&request, id)
 			if err != nil {
 				// No more retries allowed by retry policy
-				request.CallbackChan <- &networking.ReceivedMessageData{ID: id, Err: err}
+				request.CallbackChan <- networking.ReceivedMessageData{ID: id, Err: err}
 				break
 			}
 			heap.Push(retryHeap, task)
-			messagesMap[id] = messageStatus{sendRequest: request}
+			status := messageStatus{sendRequest: new(networking.SendRequest)}
+			*status.sendRequest = request
+			messagesMap[id] = status
 		case reply := <-receiverChan:
 			status, exists := messagesMap[reply.ID]
 			if !exists {
-				messagesMap[reply.ID] = messageStatus{reply: reply}
+				messagesMap[reply.ID] = messageStatus{reply: &reply}
 				break
 			}
 			request := status.sendRequest
@@ -109,7 +114,12 @@ func MessageWriter(
 				break
 			}
 			minRetry = retryHeap.Pop().(retryTask)
-			senderChan <- messagesMap[minRetry.sendRequestId].sendRequest
+			status, exists := messagesMap[minRetry.sendRequestId]
+			if !exists {
+				slog.Warn("Deadline passed for request but no request was found in the retry map")
+				break
+			}
+			senderChan <- *status.sendRequest
 			delete(messagesMap, minRetry.sendRequestId)
 		}
 
