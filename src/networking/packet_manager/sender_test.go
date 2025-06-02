@@ -29,14 +29,6 @@ func (m *mockSendUDPConn) SetDeadline(t time.Time) error              { return n
 func (m *mockSendUDPConn) SetReadDeadline(t time.Time) error          { return nil }
 func (m *mockSendUDPConn) SetWriteDeadline(t time.Time) error         { return nil }
 
-type RetryPolicyMock struct {
-	retryFn func() (time.Duration, error)
-}
-
-func (rp RetryPolicyMock) NextRetry() (time.Duration, error) {
-	return rp.retryFn()
-}
-
 func TestSenderCorrectMessage(t *testing.T) {
 	// mesage data
 	recvAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
@@ -55,16 +47,16 @@ func TestSenderCorrectMessage(t *testing.T) {
 
 	// Mock objects
 	reqChannel := make(chan networking.SendRequest)
-	writerChannel := make(chan networking.SendRequest)
+	waiterChannel := make(chan networking.SendRequest)
 	mockUDPConn := new(mockSendUDPConn)
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), len(sendReq.Message), nil).Once()
 
-	go Sender(mockUDPConn, reqChannel, writerChannel)
+	go Sender(mockUDPConn, reqChannel, waiterChannel)
 	reqChannel <- sendReq
 
 	select {
-	case recvReq := <-writerChannel:
+	case recvReq := <-waiterChannel:
 		if !bytes.Equal(recvReq.Message, sendReq.Message) {
 			t.Errorf("Received message retry content does not match\nexpected: '%s'\ngot: '%s'",
 				sendReq.Message, recvReq.Message)
@@ -104,16 +96,16 @@ func TestSenderFailedToSend(t *testing.T) {
 
 	// Mock objects
 	reqChannel := make(chan networking.SendRequest)
-	writerChannel := make(chan networking.SendRequest)
+	waiterChannel := make(chan networking.SendRequest)
 	mockUDPConn := new(mockSendUDPConn)
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), 0, err).Once()
 
-	go Sender(mockUDPConn, reqChannel, writerChannel)
+	go Sender(mockUDPConn, reqChannel, waiterChannel)
 	reqChannel <- sendReq
 
 	select {
-	case <-writerChannel:
+	case <-waiterChannel:
 		t.Error("Received retry request when request failed")
 	case message := <-callbackChan:
 		if message.Err != err {
@@ -145,24 +137,24 @@ func TestSenderAwaitsMessages(t *testing.T) {
 
 	// Mock objects
 	reqChannel := make(chan networking.SendRequest)
-	writerChannel := make(chan networking.SendRequest)
+	waiterChannel := make(chan networking.SendRequest)
 	mockUDPConn := new(mockSendUDPConn)
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), len(sendReq.Message), nil).Once().WaitUntil(
 		time.After(2 * timeout))
 
-	go Sender(mockUDPConn, reqChannel, writerChannel)
+	go Sender(mockUDPConn, reqChannel, waiterChannel)
 	reqChannel <- sendReq
 
 	select {
-	case <-writerChannel:
-		t.Errorf("Retry request received when no message send request appeared")
+	case <-waiterChannel:
+		t.Errorf("Retry request received before correctly sending packet")
 	case <-time.After(timeout):
 		break
 	}
 
 	select {
-	case recvReq := <-writerChannel:
+	case recvReq := <-waiterChannel:
 		if !bytes.Equal(recvReq.Message, sendReq.Message) {
 			t.Errorf("Received message retry content does not match\nexpected: '%s'\ngot: '%s'",
 				sendReq.Message, recvReq.Message)

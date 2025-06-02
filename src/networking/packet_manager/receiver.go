@@ -3,14 +3,18 @@ package packet_manager
 import (
 	"log/slog"
 	"mimuw_zps/src/networking"
+	"mimuw_zps/src/utility"
 	"net"
 )
 
 const BUF_SIZE = 2048
 
 // Receives a message (sigle UDP packet) and sends received initialy validated
-// data to writer via writerChan.
-func Receiver(conn net.PacketConn, writerChan chan *networking.ReceivedMessageData) {
+// data to waiter via replyChan or requestChan depending on the message type
+// (reply -> replyChan, request -> requestChan).
+func Receiver(conn net.PacketConn,
+	replyChan chan<- networking.ReceivedMessageData,
+	requestChan chan<- networking.ReceivedMessageData) {
 	buf := make([]byte, BUF_SIZE)
 	for {
 		n, addr, err := conn.ReadFrom(buf)
@@ -24,6 +28,17 @@ func Receiver(conn net.PacketConn, writerChan chan *networking.ReceivedMessageDa
 		copy(data, buf[:n])
 
 		receivedMessage := networking.StoreReceivedMessageData(data, addr)
-		writerChan <- &receivedMessage
+		// Chance that random ID is 0 is almost 0 isn't it? ;)
+		if utility.IsIDEmpty(receivedMessage.ID) && receivedMessage.Err != nil {
+			slog.Warn("Error decoding message data", "err", receivedMessage.Err)
+			continue
+		}
+		if receivedMessage.Err == nil && networking.IsRequest(receivedMessage.MessType) {
+			// A request arrived
+			slog.Warn("Forwarding request")
+			requestChan <- receivedMessage
+			continue
+		}
+		replyChan <- receivedMessage
 	}
 }

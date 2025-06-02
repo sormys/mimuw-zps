@@ -22,6 +22,17 @@ const (
 	NO_DATUM      MessageType = "NoDatum"
 )
 
+func IsRequest(messageType MessageType) bool {
+	// FIXME(sormys) temporary solution, should probably just check if code is
+	// >127
+	isRequest := false
+	switch messageType {
+	case HELLO, ROOT_REQUEST, DATUM_REQUEST, PING:
+		isRequest = true
+	}
+	return isRequest
+}
+
 var TypeMap = map[uint8]MessageType{
 	0x00: PING,
 	0x01: HELLO,
