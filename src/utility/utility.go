@@ -8,11 +8,17 @@ import (
 
 type ID = [4]byte
 
+const MAX_ID = uint32(0xFFFFFFFF)
+
 // return ID from messsage
 func GetMessageID(data []byte) ID {
 	var id ID
 	copy(id[:], data[:4])
 	return id
+}
+
+func ConvertIDToUint(id ID) uint32 {
+	return uint32(id[0])<<24 | uint32(id[1])<<16 | uint32(id[2])<<8 | uint32(id[3])
 }
 
 // return Type message from messsage

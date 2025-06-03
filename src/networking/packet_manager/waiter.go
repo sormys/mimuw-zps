@@ -75,10 +75,10 @@ func trySendCallback(callbackChan chan<- networking.ReceivedMessageData,
 //     received retry request has passed without receiving a reply
 //
 // Important Note:
-// Waiter assumes senderChan and callbackChan in SendRequest can immediately
+// WaiterWorker assumes senderChan and callbackChan in SendRequest can immediately
 // receive data. If data cannot be send through a channel it will be skipped
 // and forgotten.
-func Waiter(
+func WaiterWorker(
 	senderChan chan<- networking.SendRequest,
 	retryReqChan <-chan networking.SendRequest,
 	receiverChan <-chan networking.ReceivedMessageData) {
@@ -157,5 +157,29 @@ func Waiter(
 			delete(messagesMap, minRetry.sendRequestId)
 		}
 
+	}
+}
+
+func Waiter(senderChan chan<- networking.SendRequest,
+	retryReqChan <-chan networking.SendRequest,
+	receiverChan <-chan networking.ReceivedMessageData, workerCount uint32) {
+	if workerCount < 1 {
+		slog.Error("Invalid number of sender workers provided")
+		return
+	}
+	workers := make([](chan networking.SendRequest), workerCount)
+	for i := range workerCount {
+		workerChan := make(chan networking.SendRequest, networking.WORKER_CHAN_BUF_SIZE)
+		workers[i] = workerChan
+		go WaiterWorker(senderChan, workerChan, receiverChan)
+	}
+
+	bucketSize := utility.MAX_ID / uint32(workerCount)
+	for {
+		request := <-retryReqChan
+		messageId := utility.ConvertIDToUint(utility.GetMessageID(request.Message))
+		// Make sure we will be in the array range
+		messageId = min(messageId, utility.MAX_ID-1)
+		workers[messageId/uint32(bucketSize)] <- request
 	}
 }

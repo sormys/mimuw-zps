@@ -52,7 +52,7 @@ func TestSenderCorrectMessage(t *testing.T) {
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), len(sendReq.Message), nil).Once()
 
-	go Sender(mockUDPConn, reqChannel, waiterChannel)
+	go SenderWorker(mockUDPConn, reqChannel, waiterChannel)
 	reqChannel <- sendReq
 
 	select {
@@ -101,7 +101,7 @@ func TestSenderFailedToSend(t *testing.T) {
 	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
 		[]byte(sendReq.Message), 0, err).Once()
 
-	go Sender(mockUDPConn, reqChannel, waiterChannel)
+	go SenderWorker(mockUDPConn, reqChannel, waiterChannel)
 	reqChannel <- sendReq
 
 	select {
@@ -143,7 +143,7 @@ func TestSenderAwaitsMessages(t *testing.T) {
 		[]byte(sendReq.Message), len(sendReq.Message), nil).Once().WaitUntil(
 		time.After(2 * timeout))
 
-	go Sender(mockUDPConn, reqChannel, waiterChannel)
+	go SenderWorker(mockUDPConn, reqChannel, waiterChannel)
 	reqChannel <- sendReq
 
 	select {

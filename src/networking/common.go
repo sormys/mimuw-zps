@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+const WORKER_CHAN_BUF_SIZE = 1024
+const MAIN_CHAN_BUF_SIZE = 2048
+
 type MessageType = string
 
 const (
