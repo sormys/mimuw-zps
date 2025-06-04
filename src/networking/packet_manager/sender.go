@@ -17,7 +17,10 @@ func SenderWorker(conn net.PacketConn,
 		request := <-requestChan
 		_, err := conn.WriteTo(request.Message[:], request.Addr)
 		if err != nil {
-			request.CallbackChan <- networking.ReceivedMessageData{Err: err}
+			if request.CallbackChan != nil {
+				request.CallbackChan <- networking.ReceivedMessageData{Err: err}
+				slog.Error("failed to send packet", "err", err)
+			}
 			continue
 		}
 		waiterChan <- request

@@ -15,9 +15,9 @@ type PacketSendRequest struct {
 }
 
 type PacketConn interface {
-	sendRequest(request PacketSendRequest) networking.ReceivedMessageData // blocking
-	sendReply(request PacketSendRequest) error                            // non-blocking
-	recvRequest() networking.ReceivedMessageData                          // blocking
+	SendRequest(request PacketSendRequest) networking.ReceivedMessageData // blocking
+	SendReply(request PacketSendRequest) error                            // non-blocking
+	RecvRequest() networking.ReceivedMessageData                          // blocking
 }
 
 type packetConn struct {
@@ -25,7 +25,7 @@ type packetConn struct {
 	requestChan <-chan networking.ReceivedMessageData
 }
 
-func (pc packetConn) sendRequest(request PacketSendRequest) networking.ReceivedMessageData {
+func (pc packetConn) SendRequest(request PacketSendRequest) networking.ReceivedMessageData {
 	callbackChan := make(chan networking.ReceivedMessageData, 1)
 	sendRequest := networking.SendRequest{
 		Addr:            request.Addr,
@@ -44,7 +44,7 @@ func (pc packetConn) sendRequest(request PacketSendRequest) networking.ReceivedM
 	return recvData
 }
 
-func (pc packetConn) sendReply(request PacketSendRequest) error {
+func (pc packetConn) SendReply(request PacketSendRequest) error {
 	sendRequest := networking.SendRequest{
 		Addr:            request.Addr,
 		Message:         request.Message,
@@ -59,16 +59,16 @@ func (pc packetConn) sendReply(request PacketSendRequest) error {
 	return nil
 }
 
-func (pc packetConn) recvRequest() networking.ReceivedMessageData {
+func (pc packetConn) RecvRequest() networking.ReceivedMessageData {
 	request := <-pc.requestChan
 	return request
 }
 
 func StartPacketManager(addr net.Addr, senderCount uint32, waiterCount uint32, receiverCount uint32) (PacketConn, error) {
-	senderChan := make(chan networking.SendRequest)
-	waiterChan := make(chan networking.SendRequest)
-	receiverReplyChan := make(chan networking.ReceivedMessageData)
-	receiverRequestChan := make(chan networking.ReceivedMessageData)
+	senderChan := make(chan networking.SendRequest, networking.MAIN_CHAN_BUF_SIZE)
+	waiterChan := make(chan networking.SendRequest, networking.MAIN_CHAN_BUF_SIZE)
+	receiverReplyChan := make(chan networking.ReceivedMessageData, networking.MAIN_CHAN_BUF_SIZE)
+	receiverRequestChan := make(chan networking.ReceivedMessageData, networking.MAIN_CHAN_BUF_SIZE)
 	conn, err := net.ListenPacket("udp4", addr.String())
 	if err != nil {
 		return packetConn{}, err

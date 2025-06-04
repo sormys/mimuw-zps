@@ -35,7 +35,6 @@ func ReceiverWorker(conn net.PacketConn,
 		}
 		if receivedMessage.Err == nil && networking.IsRequest(receivedMessage.MessType) {
 			// A request arrived
-			slog.Warn("Forwarding request")
 			requestChan <- receivedMessage
 			continue
 		}
