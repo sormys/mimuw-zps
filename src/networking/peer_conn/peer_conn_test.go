@@ -174,7 +174,7 @@ func TestEncodeError(t *testing.T) {
 	length := m[5:7]
 	err := m[7 : 7+utility.GetNumberFromBytes(length)]
 
-	if utility.GetMessageType(m) != uint16(typeMessage[0]) {
+	if utility.GetMessageType(m) != uint8(typeMessage[0]) {
 		t.Errorf(
 			"Incorrect MessageType, got %d, but expected %d", utility.GetMessageType(m), typeMessage[0])
 		return

@@ -29,7 +29,7 @@ func equalID(id1 ID, id2 ID) bool {
 
 func TestCorrectData(t *testing.T) {
 	ID := GenerateID()
-	messageType := uint16(0x01)
+	messageType := uint8(0x01)
 	example := createMessage(ID)
 
 	if messageType != GetMessageType(example) {
@@ -53,8 +53,8 @@ func TestCorrectData(t *testing.T) {
 func TestIncorrectData(t *testing.T) {
 	ID := GenerateID()
 	ID2 := GenerateID()
-	messageType := uint16(0x0001)
-	messageType2 := uint16(0x0002)
+	messageType := uint8(0x01)
+	messageType2 := uint8(0x02)
 	example := createMessage(ID)
 
 	if messageType2 == GetMessageType(example) {

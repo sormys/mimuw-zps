@@ -183,10 +183,10 @@ func ReceiveReplyHandshake(buf encryption.Message) bool {
 func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Server) bool {
 
 	request := decodeHandshake(data)
-	key, error := server.GetPeerKey(string(request.name))
+	key, err := server.GetPeerKey(string(request.name))
 
-	if error != nil {
-		slog.Error("Failed to get peer key", "error", error)
+	if err != nil {
+		slog.Error("Failed to get peer key", "error", err)
 		return false
 	}
 
@@ -199,7 +199,7 @@ func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Se
 	conn := SendMessage(addr, data)
 
 	if conn == nil {
-		slog.Error("Fail to respond to handshake", "error", error)
+		slog.Error("Fail to respond to handshake", "error", err)
 		return false
 	}
 
