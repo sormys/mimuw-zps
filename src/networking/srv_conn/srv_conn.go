@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/networking/packet_manager"
+	"mimuw_zps/src/networking/peer_conn"
 	"net/http"
 	"net/url"
 	"strings"
@@ -152,6 +154,9 @@ func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
 	return splitLines(body), nil
 }
 
+func (s Server) GetInfoPeers() ([]peer_conn.Peer, error)
+
+func (s Server) ConnectWithServer(attempts int, conn packet_manager.PacketConn, nickname string) error
 func splitLines(str string) []string {
 	lines := strings.Split(str, "\n")
 	// Remove empty line from split

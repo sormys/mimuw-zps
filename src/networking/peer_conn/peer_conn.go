@@ -5,7 +5,8 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/networking/srv_conn"
+
+	// "mimuw_zps/src/networking/srv_conn"
 	"mimuw_zps/src/utility"
 	"net"
 )
@@ -16,11 +17,11 @@ var userMap = map[string]Peer{}
 
 // Stage can me ENUM, for example: in the middle of the handshake, or post-handshake
 type Peer struct {
-	addresses []string
-	name      string
-	key       encryption.Key
-	last_id   utility.ID
-	stage     string
+	Addresses []string
+	Name      string
+	Key       encryption.Key
+	Last_id   utility.ID
+	Stage     string
 }
 
 type HandshakeType struct {
@@ -41,7 +42,7 @@ var (
 )
 
 func NewPeer(name string, addresses []string, key encryption.Key, last_id utility.ID) Peer {
-	return Peer{name: name, addresses: addresses, key: key, last_id: last_id}
+	return Peer{Name: name, Addresses: addresses, Key: key, Last_id: last_id}
 }
 
 func getExtensions() []byte {
@@ -164,7 +165,7 @@ func ReceiveReplyHandshake(buf encryption.Message) bool {
 		return false
 	}
 
-	id := peer.last_id
+	id := peer.Last_id
 	if utility.IsIDEmpty(id) {
 		slog.Error("Program does not send Handshake to this peer", "name", handshake.name)
 		return false
@@ -180,29 +181,29 @@ func ReceiveReplyHandshake(buf encryption.Message) bool {
 
 // This function is called when the main receiver recognize, that request was "Hello".
 // It queries the server for peer's key, verifies it and responds to the sender with "HelloReply"
-func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Server) bool {
+// func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Server) bool {
 
-	request := decodeHandshake(data)
-	key, err := server.GetPeerKey(string(request.name))
+// 	request := decodeHandshake(data)
+// 	key, err := server.GetPeerKey(string(request.name))
 
-	if err != nil {
-		slog.Error("Failed to get peer key", "error", err)
-		return false
-	}
+// 	if err != nil {
+// 		slog.Error("Failed to get peer key", "error", err)
+// 		return false
+// 	}
 
-	if !encryption.VerifySignature(data, request.signature, encryption.ParsePublicKey(key)) {
-		SendMessage(addr, encodeError(utility.GetMessageID(data), "Signature verification failed"))
-		return false
-	}
+// 	if !encryption.VerifySignature(data, request.signature, encryption.ParsePublicKey(key)) {
+// 		SendMessage(addr, encodeError(utility.GetMessageID(data), "Signature verification failed"))
+// 		return false
+// 	}
 
-	data = encodeHandshake(HELLO_REPLY, utility.GetMessageID(data))
-	conn := SendMessage(addr, data)
+// 	data = encodeHandshake(HELLO_REPLY, utility.GetMessageID(data))
+// 	conn := SendMessage(addr, data)
 
-	if conn == nil {
-		slog.Error("Fail to respond to handshake", "error", err)
-		return false
-	}
+// 	if conn == nil {
+// 		slog.Error("Fail to respond to handshake", "error", err)
+// 		return false
+// 	}
 
-	slog.Info("Handshake sent correctly", "address", addr)
-	return true
-}
+// 	slog.Info("Handshake sent correctly", "address", addr)
+// 	return true
+// }

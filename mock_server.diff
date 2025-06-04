@@ -1,0 +1,177 @@
+diff --git a/src/networking/peer_conn/peer_conn.go b/src/networking/peer_conn/peer_conn.go
+index b6693d0..b6fab48 100644
+--- a/src/networking/peer_conn/peer_conn.go
++++ b/src/networking/peer_conn/peer_conn.go
+@@ -183,10 +183,10 @@ func ReceiveReplyHandshake(buf encryption.Message) bool {
+ func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Server) bool {
+ 
+ 	request := decodeHandshake(data)
+-	key, error := server.GetPeerKey(string(request.name))
++	key, err := server.GetPeerKey(string(request.name))
+ 
+-	if error != nil {
+-		slog.Error("Failed to get peer key", "error", error)
++	if err != nil {
++		slog.Error("Failed to get peer key", "error", err)
+ 		return false
+ 	}
+ 
+@@ -199,7 +199,7 @@ func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Se
+ 	conn := SendMessage(addr, data)
+ 
+ 	if conn == nil {
+-		slog.Error("Fail to respond to handshake", "error", error)
++		slog.Error("Fail to respond to handshake", "error", err)
+ 		return false
+ 	}
+ 
+diff --git a/src/networking/peer_conn/peer_conn_test.go b/src/networking/peer_conn/peer_conn_test.go
+index 4ee5a8e..4fab222 100644
+--- a/src/networking/peer_conn/peer_conn_test.go
++++ b/src/networking/peer_conn/peer_conn_test.go
+@@ -2,6 +2,7 @@ package peer_conn
+ 
+ import (
+ 	"bytes"
++	"crypto/x509"
+ 	"log/slog"
+ 	"mimuw_zps/src/encryption"
+ 	"mimuw_zps/src/utility"
+@@ -98,37 +99,40 @@ func TestSendHandshake(t *testing.T) {
+ 	}
+ }
+ 
+-/*
+ type MockServer struct{}
+ 
+-	func (m *MockServer) GetPeerKey(name string) (encryption.Key, error) {
+-		pubKey := encryption.GetMyPublicKey()
+-		derBytes, err := x509.MarshalPKIXPublicKey(&pubKey)
+-		if err != nil {
+-			return encryption.Key{}, err
+-		}
+-		return encryption.Key(derBytes), nil
+-	}
+-
+-	func TestReceiveHanshake(t *testing.T) {
+-		addr, err := net.ResolveUDPAddr("udp4", myAddress)
+-		if err != nil {
+-			t.Errorf(
+-				"Error during resolving UDP address: %v",
+-				err)
+-			return
+-		}
+-		id := utility.GenerateID()
+-		hello := encryption.TypeMessage([]byte{0x00})
+-		message := encodeHandshake(hello, id)
+-		signature := encryption.GetSignature(message)
+-		data := append(message, signature...)
+-
+-		server := srv_conn.NewServer()
+-		ReceiveHandshake(addr, data, server)
++func (m MockServer) GetPeerKey(name string) (encryption.Key, error) {
++	pubKey := encryption.GetMyPublicKey()
++	derBytes, err := x509.MarshalPKIXPublicKey(&pubKey)
++	if err != nil {
++		return encryption.Key{}, err
++	}
++	return encryption.Key(derBytes), nil
++}
++
++func (m MockServer) GetPeers() ([]string, error)                           { return []string{}, nil }
++func (m MockServer) GetPeerAddresses(nickname string) ([]string, error)    { return []string{}, nil }
++func (m MockServer) RegisterKey(nickname string, key encryption.Key) error { return nil }
++
++func TestReceiveHanshake(t *testing.T) {
++	addr, err := net.ResolveUDPAddr("udp4", myAddress)
++	if err != nil {
++		t.Errorf(
++			"Error during resolving UDP address: %v",
++			err)
++		return
++	}
++	id := utility.GenerateID()
++	hello := encryption.TypeMessage([]byte{0x00})
++	message := encodeHandshake(hello, id)
++	signature := encryption.GetSignature(message)
++	data := append(message, signature[:]...)
++
++	server := MockServer{}
++	ReceiveHandshake(addr, data, server)
+ 
+ }
+-*/
++
+ func TestEncodeDecodeHandshake(t *testing.T) {
+ 	id := utility.GenerateID()
+ 	typeMessage := encryption.TypeMessage([]byte{0x00})
+@@ -174,7 +178,7 @@ func TestEncodeError(t *testing.T) {
+ 	length := m[5:7]
+ 	err := m[7 : 7+utility.GetNumberFromBytes(length)]
+ 
+-	if utility.GetMessageType(m) != uint16(typeMessage[0]) {
++	if utility.GetMessageType(m) != uint8(typeMessage[0]) {
+ 		t.Errorf(
+ 			"Incorrect MessageType, got %d, but expected %d", utility.GetMessageType(m), typeMessage[0])
+ 		return
+diff --git a/src/networking/srv_conn/srv_conn.go b/src/networking/srv_conn/srv_conn.go
+index 39e74c2..d748c95 100644
+--- a/src/networking/srv_conn/srv_conn.go
++++ b/src/networking/srv_conn/srv_conn.go
+@@ -15,18 +15,25 @@ const PEERS_ENDPOINT = "peers"
+ const ADDRESS_ENDPOINT = "addresses"
+ const KEY_ENDPOINT = "key"
+ 
++type Server interface {
++	RegisterKey(nickname string, key encryption.Key) error
++	GetPeers() ([]string, error)
++	GetPeerKey(nickname string) (encryption.Key, error)
++	GetPeerAddresses(nickname string) ([]string, error)
++}
++
+ // Struct used for connection to central server under provided url
+-type Server struct {
++type server struct {
+ 	url string
+ }
+ 
+ // Creates new instance of Server object with provided url
+-func NewServer(url string) Server {
+-	return Server{url: url}
++func NewServer(url string) server {
++	return server{url: url}
+ }
+ 
+ // Sends request to server to register private key under the nickname
+-func (s Server) RegisterKey(nickname string, key encryption.Key) error {
++func (s server) RegisterKey(nickname string, key encryption.Key) error {
+ 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, KEY_ENDPOINT)
+ 	if err != nil {
+ 		slog.Error("Failed to create registation url",
+@@ -65,7 +72,7 @@ func (s Server) RegisterKey(nickname string, key encryption.Key) error {
+ }
+ 
+ // Gets list of available peers from server
+-func (s Server) GetPeers() ([]string, error) {
++func (s server) GetPeers() ([]string, error) {
+ 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT)
+ 	if err != nil {
+ 		slog.Error("Failed to create url for peer endpoint")
+@@ -93,7 +100,7 @@ func (s Server) GetPeers() ([]string, error) {
+ }
+ 
+ // Gets public key registered under the nickname from server
+-func (s Server) GetPeerKey(nickname string) (encryption.Key, error) {
++func (s server) GetPeerKey(nickname string) (encryption.Key, error) {
+ 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, KEY_ENDPOINT)
+ 	if err != nil {
+ 		slog.Error("Failed to create url of server")
+@@ -125,7 +132,7 @@ func (s Server) GetPeerKey(nickname string) (encryption.Key, error) {
+ }
+ 
+ // Gets addresses registered under the nickname from server
+-func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
++func (s server) GetPeerAddresses(nickname string) ([]string, error) {
+ 	url, err := url.JoinPath(s.url, PEERS_ENDPOINT, nickname, ADDRESS_ENDPOINT)
+ 	if err != nil {
+ 		slog.Error("Failed to create url of server")
