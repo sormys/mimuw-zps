@@ -69,7 +69,7 @@ func StartPacketManager(addr net.Addr, senderCount uint32, waiterCount uint32, r
 	waiterChan := make(chan networking.SendRequest, networking.MAIN_CHAN_BUF_SIZE)
 	receiverReplyChan := make(chan networking.ReceivedMessageData, networking.MAIN_CHAN_BUF_SIZE)
 	receiverRequestChan := make(chan networking.ReceivedMessageData, networking.MAIN_CHAN_BUF_SIZE)
-	conn, err := net.ListenPacket("udp4", addr.String())
+	conn, err := net.ListenPacket("udp", addr.String())
 	if err != nil {
 		return packetConn{}, err
 	}
