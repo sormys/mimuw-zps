@@ -28,7 +28,7 @@ type Hash = [HASH_LENGTH]byte
 type TuiMessage interface {
 	//User    peer_conn.Peer
 	Payload() any
-	// Hash        encryption.Message
+	// Hash        encryption.Message123
 	RequestType() RequestTuiType
 }
 
