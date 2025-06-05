@@ -6,8 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/peer_conn"
+	"mimuw_zps/src/utility"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -154,9 +155,69 @@ func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
 	return splitLines(body), nil
 }
 
-func (s Server) GetInfoPeers() ([]peer_conn.Peer, error)
+// Get all required info about active Peers
+func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
+	var peers []peer_conn.Peer
+	var errors []error
+	nicknames, err := s.GetPeers()
+	if err != nil {
+		return nil, []error{err}
+	}
+	for i := range nicknames {
+		addr, err := s.GetPeerAddresses(nicknames[i])
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		addresses, errArray := convertStringToAddr(addr)
+		if errArray != nil {
+			errors = append(errors, errArray...)
+			continue
+		}
+		key, err := s.GetPeerKey(nicknames[i])
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		peers = append(peers, peer_conn.NewPeer(nicknames[i], addresses, key))
+	}
+	return peers, errors
+}
 
-func (s Server) ConnectWithServer(attempts int, conn packet_manager.PacketConn, nickname string) error
+// Registers the user's key with the server and performs the initial handshake.
+// Return nil if successful; otherwise, returns and error
+func (s Server) ConnectWithServer(nickname string, addr net.Addr) error {
+	key, err := encryption.GetMyPublicKeyBytes()
+	if err != nil {
+		return err
+	}
+
+	err = s.RegisterKey(nickname, key)
+	if err != nil {
+		return err
+	}
+
+	id := utility.GenerateID()
+	request, err := http.NewRequest(http.MethodPut, s.url, bytes.NewBuffer(createHandshakeBytes(nickname, id)))
+	if err != nil {
+		return err
+	}
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		slog.Warn("Failed to send register request to server", "err", err)
+		return err
+	}
+
+	defer response.Body.Close()
+	bodyBytes, err := io.ReadAll(response.Body)
+
+	if !verifyHandshakeServer(bodyBytes, id) {
+		return errors.New("Failed to receive Handshake from server")
+	}
+	return nil
+
+}
 func splitLines(str string) []string {
 	lines := strings.Split(str, "\n")
 	// Remove empty line from split

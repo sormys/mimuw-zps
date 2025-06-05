@@ -5,6 +5,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"log/slog"
 	"math/big"
 )
@@ -36,6 +37,14 @@ func init() {
 
 func GetMyPublicKey() ecdsa.PublicKey {
 	return *publicKey
+}
+
+func GetMyPublicKeyBytes() (Key, error) {
+	derBytes, err := x509.MarshalPKIXPublicKey(&publicKey)
+	if err != nil {
+		return Key{}, err
+	}
+	return Key(derBytes), nil
 }
 
 // The code below comes from the project description

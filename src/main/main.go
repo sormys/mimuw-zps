@@ -5,7 +5,7 @@ import (
 	"log"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
-	connection_manager "mimuw_zps/src/networking/connection"
+	"mimuw_zps/src/networking/connection_manager"
 	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
@@ -16,11 +16,14 @@ func tuiManager(received <-chan message_manager.TuiMessage,
 	sender <-chan message_manager.TuiMessage) {
 
 }
+func ifEmptyReceivedData(data message_manager.TuiMessage) bool
 
 func handleUserCommand(conn packet_manager.PacketConn,
 	tuiReceiver <-chan message_manager.TuiMessage,
-	tuiSender chan<- message_manager.TuiMessage) {
-	var data networking.ReceivedMessageData
+	tuiSender chan<- message_manager.TuiMessage,
+	server srv_conn.Server) {
+	var data message_manager.TuiMessage
+	var err error
 	for message := range tuiReceiver {
 		go func(message message_manager.TuiMessage) {
 			switch message.RequestType() {
@@ -29,23 +32,33 @@ func handleUserCommand(conn packet_manager.PacketConn,
 					data = connection_manager.StartConnection(conn, message.Payload().(peer_conn.Peer).Addresses)
 				}
 
-			case message_manager.RELOAD:
+			case message_manager.RELOAD_PEERS:
 				{
-					data = connection_manager.ReloadContent(conn, message)
+					data = connection_manager.ReloadAvailablePeers(server)
+				}
+			case message_manager.RELOAD_CONTENT:
+				{
+					data = connection_manager.ReloadPeerContent(conn, message.Payload().(message_manager.TuiMessageBasicInfo))
 				}
 
 			case message_manager.DOWNLOAD:
 				{
-					data = connection_manager.SendMessage(conn, message)
+					data = connection_manager.DownloadFileFromPeer(conn, message.Payload().(message_manager.TuiMessageBasicInfo))
 				}
 			}
-			tuiSender <- message_manager.ConvertReceivedMessageDataToTuiMessage(data)
+			if err != nil {
+				tuiSender <- message_manager.ConvertErrorToTuiMessage(err)
+
+			}
+			if ifEmptyReceivedData(data) {
+				tuiSender <- data
+			}
 		}(message)
 
 	}
 }
 
-func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_manager.TuiMessage) {
+func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_manager.TuiMessage, server srv_conn.Server) {
 	var err error
 	for {
 		// I am not sure if this solution is safe, when we get a lots of requests
@@ -53,13 +66,14 @@ func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_ma
 		go func(data networking.ReceivedMessageData) {
 			switch data.MessType {
 			case networking.DATUM_REQUEST:
+				// we have to manage with which users we can talk, because there are after handshake. We can send data to someone with whom we are not conencted
 				err = connection_manager.SendData(conn, data)
 
 			case networking.ROOT_REQUEST:
-				err = connection_manager.SendRoot(conn, data)
+				err = connection_manager.SendRootReply(conn, data)
 
 			case networking.HELLO:
-				err = connection_manager.SendHello(conn, data)
+				err = connection_manager.SendHelloReply(conn, data, server)
 
 			default:
 				err = errors.New("Unknown Message Type " + data.MessType + " from address " + data.Addr.String())
@@ -72,6 +86,7 @@ func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_ma
 	}
 }
 func main() {
+
 	waiterCount := uint32(1)
 	senderCount := uint32(1)
 	channel_size := 10
@@ -79,7 +94,6 @@ func main() {
 	myAddress := ":0"
 	server_url := "https://galene.org:8448"
 	myReceiverCount := 1
-	attempts := 4
 	nickname := "parowkozerca"
 
 	server := srv_conn.NewServer(server_url)
@@ -100,18 +114,20 @@ func main() {
 	receiveFromTui := make(chan message_manager.TuiMessage, channel_size)
 
 	go tuiManager(channelToSend, receiveFromTui)
-	go handleUserCommand(conn, channelToSend, receiveFromTui)
+	go handleUserCommand(conn, channelToSend, receiveFromTui, server)
 
 	for range myReceiverCount {
-		go handlerReceiver(conn, channelToSend)
+		go handlerReceiver(conn, channelToSend, server)
 	}
 
-	err = server.ConnectWithServer(attempts, conn, nickname)
+	err = server.ConnectWithServer(nickname, addr)
 	if err != nil {
-		log.Fatal("Tried to connect to the server %d times, but all attempts failed", attempts, err)
+		log.Fatal("Failed to connect to the server " + err.Error())
 	}
 
-	peers, err := server.GetInfoPeers()
+	peers, errArray := server.GetInfoPeers()
+
+	channelToSend <- message_manager.ConvertErrorsToTuiMessage(errArray)
 	channelToSend <- message_manager.CreateListPeers(peers)
 
 	select {}

@@ -17,11 +17,9 @@ var userMap = map[string]Peer{}
 
 // Stage can me ENUM, for example: in the middle of the handshake, or post-handshake
 type Peer struct {
-	Addresses []string
+	Addresses []net.Addr
 	Name      string
 	Key       encryption.Key
-	Last_id   utility.ID
-	Stage     string
 }
 
 type HandshakeType struct {
@@ -41,8 +39,8 @@ var (
 	my_address   = "0.0.0.0:2137"
 )
 
-func NewPeer(name string, addresses []string, key encryption.Key, last_id utility.ID) Peer {
-	return Peer{Name: name, Addresses: addresses, Key: key, Last_id: last_id}
+func NewPeer(name string, addresses []net.Addr, key encryption.Key) Peer {
+	return Peer{Name: name, Addresses: addresses, Key: key}
 }
 
 func getExtensions() []byte {
@@ -156,28 +154,28 @@ func SendHandshake(MessageType []byte, addr net.Addr) utility.ID {
 // This function is called when we receive ReplyHandshake.
 // It verfies that the response ID matches the one we sent.
 // Return true if reply is valid
-func ReceiveReplyHandshake(buf encryption.Message) bool {
+// func ReceiveReplyHandshake(buf encryption.Message) bool {
 
-	handshake := decodeHandshake(buf)
-	peer, ok := userMap[string(handshake.name)]
-	if !ok {
-		slog.Error("Username does not exist", "name", handshake.name)
-		return false
-	}
+// 	handshake := decodeHandshake(buf)
+// 	peer, ok := userMap[string(handshake.name)]
+// 	if !ok {
+// 		slog.Error("Username does not exist", "name", handshake.name)
+// 		return false
+// 	}
 
-	id := peer.Last_id
-	if utility.IsIDEmpty(id) {
-		slog.Error("Program does not send Handshake to this peer", "name", handshake.name)
-		return false
-	}
+// 	id := peer.Last_id
+// 	if utility.IsIDEmpty(id) {
+// 		slog.Error("Program does not send Handshake to this peer", "name", handshake.name)
+// 		return false
+// 	}
 
-	if bytes.Equal(handshake.ID[:], id[:]) {
-		slog.Error("Hello ID doesnt match to HelloReply ID", "error", "ID mismatch")
-		return false
-	}
+// 	if bytes.Equal(handshake.ID[:], id[:]) {
+// 		slog.Error("Hello ID doesnt match to HelloReply ID", "error", "ID mismatch")
+// 		return false
+// 	}
 
-	return true
-}
+// 	return true
+// }
 
 // This function is called when the main receiver recognize, that request was "Hello".
 // It queries the server for peer's key, verifies it and responds to the sender with "HelloReply"
