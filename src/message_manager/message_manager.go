@@ -1,7 +1,6 @@
 package message_manager
 
 import (
-	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/peer_conn"
 )
 
@@ -25,20 +24,33 @@ var (
 
 type Hash = [HASH_LENGTH]byte
 
+const (
+	INFO_TUI  = RequestTuiType("INFO_TUI")
+	ERROR_TUI = RequestTuiType("ERROR_TUI")
+	PEERS_TUI = RequestTuiType("PEERS_TUI")
+)
+
 type TuiMessage interface {
-	//User    peer_conn.Peer
 	Payload() any
-	// Hash        encryption.Message123
 	RequestType() RequestTuiType
 }
 
+// Displays all errors and info messages in the TUI
 type TuiMessageInfo struct {
+	Notification RequestTuiType
+	Description  []string
 }
 
+// Contains a Peer and a Hash. Behavior depends on the RequestTuiType:
+// It may be used to connect, downlaod data, or retrieve peer information
 type TuiMessageBasicInfo struct {
+	Notification RequestTuiType
+	FileInfo     BasicFileInfo
 }
 
-type TuiMessageContent struct {
+type TuiMessagePeers struct {
+	Notification RequestTuiType
+	Peers        []peer_conn.Peer
 }
 
 type BasicFileInfo struct {
@@ -46,15 +58,66 @@ type BasicFileInfo struct {
 	Peer peer_conn.Peer
 }
 
-func (s *TuiMessageInfo) Payload() string             { return "test" }
-func (s *TuiMessageInfo) RequestType() RequestTuiType { return "test2" }
+func newBasicFileInfo(hash Hash, peer peer_conn.Peer) BasicFileInfo {
+	return BasicFileInfo{Hash: hash, Peer: peer}
+}
 
-func (s *TuiMessageBasicInfo) Payload() BasicFileInfo      { return BasicFileInfo{} }
-func (s *TuiMessageBasicInfo) RequestType() RequestTuiType { return "test2" }
+func (s *TuiMessageInfo) Payload() any                { return s.Description }
+func (s *TuiMessageInfo) RequestType() RequestTuiType { return s.Notification }
 
-func ConvertErrorToTuiMessage(err error) TuiMessage
-func ConvertErrorsToTuiMessage(err []error) TuiMessage
-func CreateTuiMessageTypeBasicInfo(hash Hash, peer peer_conn.Peer) TuiMessage
-func CreateListPeers(peers []peer_conn.Peer) TuiMessage
-func ConvertReceivedMessageDataToTuiMessage(data networking.ReceivedMessageData) TuiMessage
-func CreateTuiMessageInfo(info string, description string) TuiMessage
+func (s *TuiMessageBasicInfo) Payload() any                { return s.FileInfo }
+func (s *TuiMessageBasicInfo) RequestType() RequestTuiType { return s.Notification }
+
+func (s *TuiMessagePeers) Payload() any                { return s.Peers }
+func (s *TuiMessagePeers) RequestType() RequestTuiType { return s.Notification }
+
+func ConvertErrorToTuiMessage(err error) TuiMessage {
+	return &TuiMessageInfo{
+		Notification: ERROR_TUI,
+		Description:  []string{err.Error()},
+	}
+}
+
+func ConvertErrorsToTuiMessage(err []error) TuiMessage {
+	description := make([]string, len(err))
+	for i := range err {
+		description[i] = err[i].Error()
+	}
+
+	return &TuiMessageInfo{
+		Notification: ERROR_TUI,
+		Description:  description,
+	}
+}
+
+func CreateTuiMessageTypeBasicInfo(hash Hash, peer peer_conn.Peer) TuiMessage {
+	return &TuiMessageBasicInfo{
+		Notification: ERROR_TUI,
+		FileInfo:     newBasicFileInfo(hash, peer),
+	}
+}
+
+func CreateListPeers(peers []peer_conn.Peer) TuiMessage {
+	return &TuiMessagePeers{
+		Notification: PEERS_TUI,
+		Peers:        peers,
+	}
+}
+
+func CreateTuiMessageInfo(requestType RequestTuiType, description string) TuiMessage {
+	return &TuiMessageInfo{
+		Notification: requestType,
+		Description:  []string{description},
+	}
+}
+
+func IsEmpty(data TuiMessage) bool {
+	return data.RequestType() == ""
+}
+
+func CreateEmptyMessageInfo() TuiMessage {
+	return &TuiMessageInfo{
+		Notification: "",
+		Description:  []string{},
+	}
+}

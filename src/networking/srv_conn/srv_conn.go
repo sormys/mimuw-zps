@@ -198,7 +198,8 @@ func (s Server) ConnectWithServer(nickname string, addr net.Addr) error {
 	}
 
 	id := utility.GenerateID()
-	request, err := http.NewRequest(http.MethodPut, s.url, bytes.NewBuffer(createHandshakeBytes(nickname, id)))
+	buf := bytes.NewBuffer(CreateHandshakeBytes(HELLO, nickname, id))
+	request, err := http.NewRequest(http.MethodPut, s.url, buf)
 	if err != nil {
 		return err
 	}
@@ -211,9 +212,12 @@ func (s Server) ConnectWithServer(nickname string, addr net.Addr) error {
 
 	defer response.Body.Close()
 	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
 
 	if !verifyHandshakeServer(bodyBytes, id) {
-		return errors.New("Failed to receive Handshake from server")
+		return errors.New("failed to receive handshake from server")
 	}
 	return nil
 

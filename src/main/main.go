@@ -12,11 +12,11 @@ import (
 	"net"
 )
 
+var nickname string
+
 func tuiManager(received <-chan message_manager.TuiMessage,
 	sender <-chan message_manager.TuiMessage) {
-
 }
-func ifEmptyReceivedData(data message_manager.TuiMessage) bool
 
 func handleUserCommand(conn packet_manager.PacketConn,
 	tuiReceiver <-chan message_manager.TuiMessage,
@@ -29,7 +29,7 @@ func handleUserCommand(conn packet_manager.PacketConn,
 			switch message.RequestType() {
 			case message_manager.CONNECT:
 				{
-					data = connection_manager.StartConnection(conn, message.Payload().(peer_conn.Peer).Addresses)
+					data = connection_manager.StartConnection(conn, message.Payload().(peer_conn.Peer).Addresses, nickname)
 				}
 
 			case message_manager.RELOAD_PEERS:
@@ -50,7 +50,7 @@ func handleUserCommand(conn packet_manager.PacketConn,
 				tuiSender <- message_manager.ConvertErrorToTuiMessage(err)
 
 			}
-			if ifEmptyReceivedData(data) {
+			if message_manager.IsEmpty(data) {
 				tuiSender <- data
 			}
 		}(message)
@@ -73,7 +73,7 @@ func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_ma
 				err = connection_manager.SendRootReply(conn, data)
 
 			case networking.HELLO:
-				err = connection_manager.SendHelloReply(conn, data, server)
+				err = connection_manager.SendHelloReply(conn, data, server, nickname)
 
 			default:
 				err = errors.New("Unknown Message Type " + data.MessType + " from address " + data.Addr.String())
@@ -94,10 +94,11 @@ func main() {
 	myAddress := ":0"
 	server_url := "https://galene.org:8448"
 	myReceiverCount := 1
-	nickname := "parowkozerca"
+	n := "parowkozerca"
 
 	server := srv_conn.NewServer(server_url)
 
+	nickname = n
 	addr, err := net.ResolveUDPAddr("udp4", myAddress)
 
 	if err != nil {

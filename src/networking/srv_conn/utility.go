@@ -11,14 +11,18 @@ const HELLO_REPLY uint8 = 120
 
 var HELLO = []byte{0x00}
 
-func createHandshakeBytes(nickname string, id utility.ID) []byte {
-	extensions := []byte{0x00, 0x00, 0x00, 0x00}
+func getExtensions() []byte {
+	return []byte{0x00, 0x00, 0x00, 0x00}
+}
+
+func CreateHandshakeBytes(typeMessage encryption.TypeMessage, nickname string, id utility.ID) []byte {
+	extensions := getExtensions()
 	name := []byte(nickname)
 	length := utility.GetBytesFromNumber(len(name))
 
 	message := utility.GenerateEmptyBuffor()
 	message = append(message, id[:]...)
-	message = append(message, HELLO...)
+	message = append(message, typeMessage...)
 	message = append(message, length...)
 	message = append(message, extensions...)
 	message = append(message, name...)
