@@ -66,11 +66,11 @@ func getSignatureFromReceivedHandshake(data []byte) encryption.Signature {
 
 func CreateHandshake(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
 	message := srv_conn.CreateHandshakeBytes(HELLO, nickname, id)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: RetryPolicyHandshake{}}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 }
 func createHandshakeReply(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
 	message := srv_conn.CreateHandshakeBytes(HELLO_REPLY, nickname, id)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: RetryPolicyReply{}}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyReply()}
 }
 
 func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash message_manager.Hash) encryption.Message {
@@ -85,7 +85,7 @@ func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessag
 }
 func createRootRequest(address net.Addr, id utility.ID) packet_manager.PacketSendRequest {
 	message := createDatumRequestTemplate(id, ROOT_REQUEST, message_manager.Hash{})
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: RetryPolicyRequest{}}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewRetryPolicyRequest()}
 }
 
 func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequest {
@@ -99,11 +99,11 @@ func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequ
 	message = append(message, ERROR...)
 	message = append(message, length...)
 	message = append(message, []byte(error_string)...)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: RetryPolicyReply{}}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyReply()}
 }
 
 func createDatumRequest(address net.Addr, hash message_manager.Hash) packet_manager.PacketSendRequest {
 	id := utility.GenerateID()
 	message := createDatumRequestTemplate(id, DATUM_REQUEST, hash)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: RetryPolicyRequest{}}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewRetryPolicyRequest()}
 }

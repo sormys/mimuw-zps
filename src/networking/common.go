@@ -5,7 +5,6 @@ import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/utility"
 	"net"
-	"time"
 )
 
 const WORKER_CHAN_BUF_SIZE = 1024
@@ -55,10 +54,6 @@ type ReceivedMessageData struct {
 	Length   uint16
 	Data     []byte
 	Err      error
-}
-
-type RetryPolicy interface {
-	NextRetry() (time.Duration, error)
 }
 
 type SendRequest struct {

@@ -1,9 +1,25 @@
-package connection_manager
+package networking
 
 import "time"
 
+type RetryPolicy interface {
+	NextRetry() (time.Duration, error)
+}
+
 type RetryPolicyHandshake struct {
 	retryCount int
+}
+
+func NewPolicyHandshake() *RetryPolicyHandshake {
+	return &RetryPolicyHandshake{retryCount: 3}
+}
+
+func NewPolicyReply() *RetryPolicyReply {
+	return &RetryPolicyReply{retryCount: 3}
+}
+
+func NewRetryPolicyRequest() *RetryPolicyRequest {
+	return &RetryPolicyRequest{retryCount: 2}
 }
 
 func (rp RetryPolicyHandshake) NextRetry() (time.Duration, error) {
