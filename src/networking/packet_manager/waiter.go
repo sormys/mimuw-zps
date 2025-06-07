@@ -10,8 +10,8 @@ import (
 )
 
 type worker struct {
-	send chan networking.SendRequest
-	recv chan networking.ReceivedMessageData
+	send chan<- networking.SendRequest
+	recv chan<- networking.ReceivedMessageData
 }
 
 type messageStatus struct {
