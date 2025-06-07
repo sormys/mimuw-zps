@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"mimuw_zps/src/encryption"
-
-	// "mimuw_zps/src/networking/srv_conn"
 	"mimuw_zps/src/utility"
 	"net"
 )
@@ -150,58 +148,3 @@ func SendHandshake(MessageType []byte, addr net.Addr) utility.ID {
 	}
 	return id
 }
-
-// This function is called when we receive ReplyHandshake.
-// It verfies that the response ID matches the one we sent.
-// Return true if reply is valid
-// func ReceiveReplyHandshake(buf encryption.Message) bool {
-
-// 	handshake := decodeHandshake(buf)
-// 	peer, ok := userMap[string(handshake.name)]
-// 	if !ok {
-// 		slog.Error("Username does not exist", "name", handshake.name)
-// 		return false
-// 	}
-
-// 	id := peer.Last_id
-// 	if utility.IsIDEmpty(id) {
-// 		slog.Error("Program does not send Handshake to this peer", "name", handshake.name)
-// 		return false
-// 	}
-
-// 	if bytes.Equal(handshake.ID[:], id[:]) {
-// 		slog.Error("Hello ID doesnt match to HelloReply ID", "error", "ID mismatch")
-// 		return false
-// 	}
-
-// 	return true
-// }
-
-// This function is called when the main receiver recognize, that request was "Hello".
-// It queries the server for peer's key, verifies it and responds to the sender with "HelloReply"
-// func ReceiveHandshake(addr net.Addr, data encryption.Message, server srv_conn.Server) bool {
-
-// 	request := decodeHandshake(data)
-// 	key, err := server.GetPeerKey(string(request.name))
-
-// 	if err != nil {
-// 		slog.Error("Failed to get peer key", "error", err)
-// 		return false
-// 	}
-
-// 	if !encryption.VerifySignature(data, request.signature, encryption.ParsePublicKey(key)) {
-// 		SendMessage(addr, encodeError(utility.GetMessageID(data), "Signature verification failed"))
-// 		return false
-// 	}
-
-// 	data = encodeHandshake(HELLO_REPLY, utility.GetMessageID(data))
-// 	conn := SendMessage(addr, data)
-
-// 	if conn == nil {
-// 		slog.Error("Fail to respond to handshake", "error", err)
-// 		return false
-// 	}
-
-// 	slog.Info("Handshake sent correctly", "address", addr)
-// 	return true
-// }

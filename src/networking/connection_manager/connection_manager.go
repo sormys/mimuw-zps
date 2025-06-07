@@ -1,11 +1,13 @@
 package connection_manager
 
 import (
+	"errors"
 	"log/slog"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
+	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
 	"mimuw_zps/src/utility"
 	"net"
@@ -48,12 +50,14 @@ func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networkin
 }
 
 // Initiates communication with the peer whose addresses are provided
-func StartConnection(conn packet_manager.PacketConn, addresses []net.Addr, nickname string) message_manager.TuiMessage {
+func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickname string) message_manager.TuiMessage {
+	addresses := peer.Addresses
 	for _, addr := range addresses {
 		id := utility.GenerateID()
 		message := CreateHandshake(addr, id, nickname)
 		info := conn.SendRequest(message)
-		if verifyIdAndType(info, id, networking.HELLO_REPLY) {
+		if verifyIdAndType(info, id, networking.HELLO_REPLY) &&
+			encryption.VerifySignature(info.Data, getSignatureFromReceivedHandshake(info), encryption.ParsePublicKey(peer.Key)) {
 			return message_manager.CreateTuiMessageInfo(message_manager.INFO_TUI, "Successfully connected to address "+addr.String())
 		}
 
@@ -64,16 +68,20 @@ func StartConnection(conn packet_manager.PacketConn, addresses []net.Addr, nickn
 }
 
 func SendHelloReply(conn packet_manager.PacketConn, data networking.ReceivedMessageData, server srv_conn.Server, nickname string) error {
-	key, err := server.GetPeerKey(getNameFromReceivedHandshake(data.Data))
+	key, err := server.GetPeerKey(getNameFromReceivedHandshake(data))
 
 	if err != nil {
 		slog.Error("Failed to get peer key", "error", err)
 		return err
 	}
 
-	if !encryption.VerifySignature(data.Data, getSignatureFromReceivedHandshake(data.Data), encryption.ParsePublicKey(key)) {
-		sendErrorReply(conn, data.Addr, err)
+	if !encryption.VerifySignature(data.Raw[:networking.MIN_MESSAGE_SIZE+data.Length],
+		getSignatureFromReceivedHandshake(data), encryption.ParsePublicKey(key)) {
+		slog.Debug("Failed to verify signature")
+		return errors.New("failed to verify signature in hello reply")
 	}
+
+	slog.Debug("Received correct Hello, sending reply")
 	conn.SendReply(createHandshakeReply(data.Addr, data.ID, nickname))
 	return nil
 }

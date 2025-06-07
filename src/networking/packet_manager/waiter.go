@@ -119,7 +119,7 @@ func WaiterWorker(
 			heap.Push(retryHeap, task)
 			status, exists := messagesMap[id]
 			if exists {
-				if status.reply.Err == nil {
+				if (*status.reply).Err == nil {
 					slog.Error("Received duplicated task, ignoring", "id", id)
 					continue
 				}

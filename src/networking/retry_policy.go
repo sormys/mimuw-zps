@@ -1,6 +1,9 @@
 package networking
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type RetryPolicy interface {
 	NextRetry() (time.Duration, error)
@@ -8,10 +11,11 @@ type RetryPolicy interface {
 
 type RetryPolicyHandshake struct {
 	retryCount int
+	retryLimit int
 }
 
 func NewPolicyHandshake() *RetryPolicyHandshake {
-	return &RetryPolicyHandshake{retryCount: 3}
+	return &RetryPolicyHandshake{retryLimit: 3}
 }
 
 func NewPolicyReply() *RetryPolicyReply {
@@ -24,32 +28,34 @@ func NewRetryPolicyRequest() *RetryPolicyRequest {
 
 func (rp RetryPolicyHandshake) NextRetry() (time.Duration, error) {
 	rp.retryCount++
-	if rp.retryCount > 1 {
-		return time.Microsecond, nil
+	if rp.retryCount > rp.retryLimit {
+		return time.Second, errors.New("no more retries")
 	}
 	return time.Second, nil
 }
 
 type RetryPolicyReply struct {
 	retryCount int
+	retryLimit int
 }
 
 func (rp RetryPolicyReply) NextRetry() (time.Duration, error) {
 	rp.retryCount++
-	if rp.retryCount > 1 {
-		return time.Microsecond, nil
+	if rp.retryCount > rp.retryLimit {
+		return time.Second, errors.New("no more retries")
 	}
 	return time.Second, nil
 }
 
 type RetryPolicyRequest struct {
 	retryCount int
+	retryLimit int
 }
 
 func (rp RetryPolicyRequest) NextRetry() (time.Duration, error) {
 	rp.retryCount++
-	if rp.retryCount > 1 {
-		return time.Microsecond, nil
+	if rp.retryCount > rp.retryLimit {
+		return time.Second, errors.New("no more retries")
 	}
 	return time.Second, nil
 }

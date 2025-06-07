@@ -10,11 +10,11 @@ import (
 	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/utility"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 )
 
 const PEERS_ENDPOINT = "peers"
@@ -167,6 +167,7 @@ func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
 	if err != nil {
 		return nil, []error{err}
 	}
+	//It can be slow if we have a lots of users, we can do it in parallel in the future
 	for i := range nicknames {
 		addr, err := s.GetPeerAddresses(nicknames[i])
 		if err != nil {
@@ -210,18 +211,25 @@ func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketCon
 		return errors.New("problem with server's address")
 	}
 
-	servAddr, err := net.ResolveUDPAddr("udp4", getIPv4(addr))
-	if err != nil {
-		return err
-	}
-
 	id := utility.GenerateID()
 	message := CreateHandshakeBytes(HELLO, nickname, id)
-	packageSent := packet_manager.PacketSendRequest{Addr: servAddr, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
+	for i := range addr {
+		servAddr, err := getUDPaddr(addr[i])
+		if err != nil {
+			return err
+		}
+		packageSent := packet_manager.PacketSendRequest{Addr: servAddr, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 
-	received := conn.SendRequest(packageSent)
-	if received.MessType != networking.HELLO_REPLY || !bytes.Equal(received.ID[:], id[:]) {
-		return errors.New("failed to receive handshake from server")
+		received := conn.SendRequest(packageSent)
+		if received.Err != nil {
+			slog.Error("failed to send reply", "err", received.Err)
+		}
+	}
+
+	time.Sleep(1 * time.Second)
+	addresses, err := s.GetPeerAddresses(nickname)
+	if err != nil || len(addresses) == 0 {
+		return errors.New("failed to register address to the server")
 	}
 	return nil
 

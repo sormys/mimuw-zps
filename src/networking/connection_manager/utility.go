@@ -2,6 +2,7 @@ package connection_manager
 
 import (
 	"bytes"
+	"log/slog"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
@@ -21,13 +22,15 @@ var (
 	DATUM_REQUEST = encryption.TypeMessage([]byte{0x03})
 )
 
+const EXT_LEN = 4
+
 func printAddreses(addresses []net.Addr) string {
-	var result []string
-	for _, ad := range addresses {
-		addressString := "[" + ad.String() + "]"
-		result = append(result, addressString)
+	result := make([]string, len(addresses))
+
+	for i, addr := range addresses {
+		result[i] = "[" + addr.String() + "]"
 	}
-	return "[" + strings.Join(result, ", ") + "]"
+	return strings.Join(result, ", ")
 }
 
 func verifyIdAndType(data networking.ReceivedMessageData, id utility.ID, expectedType networking.MessageType) bool {
@@ -43,25 +46,22 @@ func getHashFromRootReply(data networking.ReceivedMessageData) message_manager.H
 		return message_manager.Hash{}
 	}
 	var hash message_manager.Hash
-	copy(hash[:], data.Data[2:2+32])
+	copy(hash[:], data.Data[2:])
 	return hash
 }
 
-func getNameFromReceivedHandshake(data []byte) string {
-	nameLen := utility.GetNumberFromBytes(data)
-	if len(data) < int(nameLen)+2 {
-		return ""
-	}
-	nameBytes := data[2 : 2+int(nameLen)]
+func getNameFromReceivedHandshake(data networking.ReceivedMessageData) string {
+	nameLen := data.Length - EXT_LEN
+	nameBytes := data.Data[EXT_LEN : EXT_LEN+nameLen]
+	slog.Debug("Got name from Hanshake", "name", string(nameBytes))
 	return string(nameBytes)
 }
 
-func getSignatureFromReceivedHandshake(data []byte) encryption.Signature {
-	nameLen := utility.GetNumberFromBytes(data)
-	if len(data) < int(nameLen)+2+32 {
+func getSignatureFromReceivedHandshake(data networking.ReceivedMessageData) encryption.Signature {
+	if len(data.Data) < int(data.Length)+encryption.KEY_LENGTH {
 		return encryption.EMPTY_SIGNATURE
 	}
-	return encryption.Signature(data[2+nameLen:])
+	return encryption.Signature(data.Data[data.Length:])
 }
 
 func CreateHandshake(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
@@ -89,8 +89,11 @@ func createRootRequest(address net.Addr, id utility.ID) packet_manager.PacketSen
 }
 
 func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequest {
+	var error_string string = "nil"
+	if err != nil {
+		error_string = err.Error()
+	}
 
-	error_string := err.Error()
 	length := utility.GetBytesFromNumber(len(error_string))
 	id := utility.GenerateID()
 

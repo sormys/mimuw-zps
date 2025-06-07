@@ -50,32 +50,33 @@ func savePrivateKeyToFile(key *ecdsa.PrivateKey) error {
 
 }
 
-func loadPrivateKeyToFile() (*ecdsa.PrivateKey, error) {
+func loadPrivateKeyFromFile() (*ecdsa.PrivateKey, error) {
 	data, _ := os.ReadFile(privateKeyFile)
 	block, _ := pem.Decode(data)
 	return x509.ParseECPrivateKey(block.Bytes)
 }
 
-func isFileExists() bool {
+func PrivateKeyFileExists() bool {
 	_, err := os.Stat(privateKeyFile)
 	return err == nil
 }
+
 func init() {
-	var privKey *ecdsa.PrivateKey
-	if !isFileExists() {
-		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	var err error
+	if !PrivateKeyFileExists() {
+		privateKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			slog.Error("Failed to generate private key", "err", err)
 			return
 		}
-		err = savePrivateKeyToFile(privKey)
+		err = savePrivateKeyToFile(privateKey)
 		if err != nil {
 			slog.Error("Failed to save private key", "err", err)
 			return
 		}
+	} else {
+		privateKey, _ = loadPrivateKeyFromFile()
 	}
-	privKey, _ = loadPrivateKeyToFile()
-	privateKey = privKey
 	publicKey = privateKey.Public().(*ecdsa.PublicKey)
 }
 
@@ -87,19 +88,13 @@ func GetMyPublicKeyBytes() (Key, error) {
 	x := publicKey.X.Bytes()
 	y := publicKey.Y.Bytes()
 
-	xKey := make([]byte, BYTE_LENGTH_32)
-	yKey := make([]byte, BYTE_LENGTH_32)
-
-	if len(x) != 32 || len(y) != 32 {
+	if len(x) != BYTE_LENGTH_32 || len(y) != BYTE_LENGTH_32 {
 		return Key{}, errors.New("incorrect publicKey")
 	}
 
-	copy(xKey[BYTE_LENGTH_32-len(x):], x)
-	copy(yKey[BYTE_LENGTH_32-len(y):], y)
-
 	var key Key
-	copy(key[0:BYTE_LENGTH_32], xKey)
-	copy(key[BYTE_LENGTH_32:], yKey)
+	copy(key[:BYTE_LENGTH_32], x)
+	copy(key[BYTE_LENGTH_32:], y)
 
 	return key, nil
 }

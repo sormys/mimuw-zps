@@ -45,12 +45,9 @@ func convertStringToAddr(string_addresses []string) ([]net.Addr, []error) {
 	return addrs, errors
 }
 
-func getIPv4(string_addresses []string) string {
-
-	for _, addrStr := range string_addresses {
-		if strings.Count(addrStr, ":") < 2 {
-			return addrStr
-		}
+func getUDPaddr(addr string) (*net.UDPAddr, error) {
+	if strings.Count(addr, ":") < 2 {
+		return net.ResolveUDPAddr("udp4", addr)
 	}
-	return ""
+	return net.ResolveUDPAddr("udp6", addr)
 }

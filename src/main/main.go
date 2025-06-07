@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"log"
+	"log/slog"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/connection_manager"
@@ -29,7 +30,7 @@ func handleUserCommand(conn packet_manager.PacketConn,
 			switch message.RequestType() {
 			case message_manager.CONNECT:
 				{
-					data = connection_manager.StartConnection(conn, message.Payload().(peer_conn.Peer).Addresses, nickname)
+					data = connection_manager.StartConnection(conn, message.Payload().(peer_conn.Peer), nickname)
 				}
 
 			case message_manager.RELOAD_PEERS:
@@ -47,10 +48,11 @@ func handleUserCommand(conn packet_manager.PacketConn,
 				}
 			}
 			if err != nil {
+				slog.Error("error when handling message", "type", message.RequestType())
 				tuiSender <- message_manager.ConvertErrorToTuiMessage(err)
 
 			}
-			if message_manager.IsEmpty(data) {
+			if data != nil && !message_manager.IsEmpty(data) {
 				tuiSender <- data
 			}
 		}(message)
