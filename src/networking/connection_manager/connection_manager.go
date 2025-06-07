@@ -68,6 +68,7 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 }
 
 func SendHelloReply(conn packet_manager.PacketConn, data networking.ReceivedMessageData, server srv_conn.Server, nickname string) error {
+	slog.Debug("Responding to HELLO message", "id", data.ID, "addr", data.Addr)
 	key, err := server.GetPeerKey(getNameFromReceivedHandshake(data))
 
 	if err != nil {

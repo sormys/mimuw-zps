@@ -107,11 +107,13 @@ func main() {
 		log.Fatal("Failed to Resolve address", err)
 	}
 
+	slog.Debug("Resolved local address", "addr", addr.String())
 	conn, err := packet_manager.StartPacketManager(addr, senderCount, waiterCount, receiverCount)
 
 	if err != nil {
 		log.Fatal("Failed to set up the program", err)
 	}
+	slog.Debug("Successfully started Packet Manager")
 
 	channelToSend := make(chan message_manager.TuiMessage, channel_size)
 	receiveFromTui := make(chan message_manager.TuiMessage, channel_size)
@@ -123,11 +125,12 @@ func main() {
 		go handlerReceiver(conn, channelToSend, server)
 	}
 
+	slog.Debug("Trying to connect to server...", "nickname", nickname)
 	err = server.ConnectWithServer(nickname, conn)
 	if err != nil {
 		log.Fatal("Failed to connect to the server " + err.Error())
 	}
-
+	slog.Debug("Successfully connected with server")
 	peers, errArray := server.GetInfoPeers()
 
 	channelToSend <- message_manager.ConvertErrorsToTuiMessage(errArray)
