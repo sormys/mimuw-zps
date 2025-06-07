@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	HELLO         = encryption.TypeMessage([]byte{0x00})
+	HELLO         = encryption.TypeMessage([]byte{0x01})
 	EMPTY_LENGTH  = encryption.TypeMessage([]byte{0x00, 0x00})
 	HELLO_REPLY   = encryption.TypeMessage([]byte{0x82})
 	ROOT_REQUEST  = encryption.TypeMessage([]byte{0x02})
