@@ -1,7 +1,6 @@
 package message_manager
 
 import (
-	"log/slog"
 	"mimuw_zps/src/networking/peer_conn"
 )
 
@@ -114,7 +113,6 @@ func CreateTuiMessageInfo(requestType RequestTuiType, description string) TuiMes
 
 func IsEmpty(data TuiMessage) bool {
 	if data == nil {
-		slog.Error("DATA IS NIL")
 		return true
 	}
 

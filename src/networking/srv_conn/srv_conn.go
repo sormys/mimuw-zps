@@ -222,7 +222,7 @@ func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketCon
 
 		received := conn.SendRequest(packageSent)
 		if received.Err != nil {
-			slog.Error("failed to send reply", "err", received.Err)
+			slog.Error("failed to send request", "err", received.Err)
 		}
 	}
 

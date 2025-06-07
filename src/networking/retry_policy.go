@@ -18,28 +18,11 @@ func NewPolicyHandshake() *RetryPolicyHandshake {
 	return &RetryPolicyHandshake{retryLimit: 3}
 }
 
-func NewPolicyReply() *RetryPolicyReply {
-	return &RetryPolicyReply{retryCount: 3}
-}
-
 func NewRetryPolicyRequest() *RetryPolicyRequest {
 	return &RetryPolicyRequest{retryCount: 2}
 }
 
 func (rp RetryPolicyHandshake) NextRetry() (time.Duration, error) {
-	rp.retryCount++
-	if rp.retryCount > rp.retryLimit {
-		return time.Second, errors.New("no more retries")
-	}
-	return time.Second, nil
-}
-
-type RetryPolicyReply struct {
-	retryCount int
-	retryLimit int
-}
-
-func (rp RetryPolicyReply) NextRetry() (time.Duration, error) {
 	rp.retryCount++
 	if rp.retryCount > rp.retryLimit {
 		return time.Second, errors.New("no more retries")

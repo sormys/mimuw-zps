@@ -57,7 +57,7 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 		message := CreateHandshake(addr, id, nickname)
 		info := conn.SendRequest(message)
 		if verifyIdAndType(info, id, networking.HELLO_REPLY) &&
-			encryption.VerifySignature(info.Data, getSignatureFromReceivedHandshake(info), encryption.ParsePublicKey(peer.Key)) {
+			encryption.VerifySignature(info.Raw[:networking.MIN_HELLO_SIZE+info.Length], getSignatureFromReceivedHandshake(info), encryption.ParsePublicKey(peer.Key)) {
 			return message_manager.CreateTuiMessageInfo(message_manager.INFO_TUI, "Successfully connected to address "+addr.String())
 		}
 
