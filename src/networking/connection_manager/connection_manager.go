@@ -33,6 +33,7 @@ func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash mess
 
 }
 
+// Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
 func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networking.ReceivedMessageData, message_manager.TuiMessage) {
 	id := utility.GenerateID()
 	for _, address := range addr {
@@ -46,7 +47,7 @@ func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networkin
 	return networking.ReceivedMessageData{}, message_manager.CreateTuiMessageInfo(message_manager.ERROR_TUI, "None of peers responds")
 }
 
-// func StartConnection(conn packet_manager.PacketConn, addresses []string) TuiNotification {
+// Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, addresses []net.Addr, nickname string) message_manager.TuiMessage {
 	for _, addr := range addresses {
 		id := utility.GenerateID()
@@ -77,6 +78,7 @@ func SendHelloReply(conn packet_manager.PacketConn, data networking.ReceivedMess
 	return nil
 }
 
+// reloads all files associated with the provided peer in message
 func ReloadPeerContent(conn packet_manager.PacketConn, message message_manager.TuiMessageBasicInfo) message_manager.TuiMessage {
 	peer := message.FileInfo.Peer
 	receivedData, info := sendRootRequest(conn, peer.Addresses)
@@ -88,6 +90,7 @@ func ReloadPeerContent(conn packet_manager.PacketConn, message message_manager.T
 
 }
 
+// return a list with available peers
 func ReloadAvailablePeers(server srv_conn.Server) message_manager.TuiMessage {
 	peers, err := server.GetInfoPeers()
 	if err != nil {
@@ -96,7 +99,6 @@ func ReloadAvailablePeers(server srv_conn.Server) message_manager.TuiMessage {
 	return message_manager.CreateListPeers(peers)
 }
 
-// func DownloadFileFromPeer(conn packet_manager.PacketConn, message message_manager.TuiMessageBasicInfo) TuiNotification {
 func DownloadFileFromPeer(conn packet_manager.PacketConn, message message_manager.TuiMessageBasicInfo) message_manager.TuiMessage {
 	fileInfo := message.FileInfo
 	receivedInfoDatum, err := sendDatumRequest(conn, fileInfo.Peer.Addresses, fileInfo.Hash)
@@ -111,9 +113,13 @@ func DownloadFileFromPeer(conn packet_manager.PacketConn, message message_manage
 }
 
 // TODO
-// Someome ask us to send data
-func SendData(conn packet_manager.PacketConn, data networking.ReceivedMessageData) error
+// Respond to request for our data
+func SendData(conn packet_manager.PacketConn, data networking.ReceivedMessageData) error {
+	return nil
+}
 
 // TODO
-// Someone ask us about our hash
-func SendRootReply(conn packet_manager.PacketConn, data networking.ReceivedMessageData) error
+// Respond to request for our hash
+func SendRootReply(conn packet_manager.PacketConn, data networking.ReceivedMessageData) error {
+	return nil
+}

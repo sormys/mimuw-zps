@@ -1,15 +1,15 @@
 package srv_conn
 
 import (
-	"bytes"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/utility"
 	"net"
+	"strings"
 )
 
 const HELLO_REPLY uint8 = 120
 
-var HELLO = []byte{0x00}
+var HELLO = []byte{0x01}
 
 func getExtensions() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x00}
@@ -18,8 +18,7 @@ func getExtensions() []byte {
 func CreateHandshakeBytes(typeMessage encryption.TypeMessage, nickname string, id utility.ID) []byte {
 	extensions := getExtensions()
 	name := []byte(nickname)
-	length := utility.GetBytesFromNumber(len(name))
-
+	length := utility.GetBytesFromNumber(len(name) + 4)
 	message := utility.GenerateEmptyBuffor()
 	message = append(message, id[:]...)
 	message = append(message, typeMessage...)
@@ -30,17 +29,6 @@ func CreateHandshakeBytes(typeMessage encryption.TypeMessage, nickname string, i
 	signature := encryption.GetSignature(message)
 	message = append(message, signature[:]...)
 	return message
-}
-
-func verifyHandshakeServer(data []byte, id utility.ID) bool {
-	id2 := utility.GetMessageID(data)
-	if bytes.Equal(id2[:], id[:]) {
-		return false
-	}
-	if utility.GetMessageType(data) != HELLO_REPLY {
-		return false
-	}
-	return true
 }
 
 func convertStringToAddr(string_addresses []string) ([]net.Addr, []error) {
@@ -55,4 +43,14 @@ func convertStringToAddr(string_addresses []string) ([]net.Addr, []error) {
 		addrs = append(addrs, addr)
 	}
 	return addrs, errors
+}
+
+func getIPv4(string_addresses []string) string {
+
+	for _, addrStr := range string_addresses {
+		if strings.Count(addrStr, ":") < 2 {
+			return addrStr
+		}
+	}
+	return ""
 }

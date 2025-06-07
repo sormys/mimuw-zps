@@ -6,13 +6,16 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"log/slog"
 	"math/big"
+	"os"
 )
 
-// uniform name to Key_length
 const KEY_LENGTH = 64
 const BYTE_LENGTH_32 = 32
+const privateKeyFile = "private_key.pem"
 
 type Message []byte
 type TypeMessage []byte
@@ -25,12 +28,53 @@ type Key = [KEY_LENGTH]byte
 var privateKey *ecdsa.PrivateKey
 var publicKey *ecdsa.PublicKey
 
-func init() {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+func savePrivateKeyToFile(key *ecdsa.PrivateKey) error {
+	data, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
-		slog.Error("Failed to generate private key", "err", err)
-		return
+		return err
 	}
+	pemBlock := &pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: data,
+	}
+	file, err := os.Create(privateKeyFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	err = pem.Encode(file, pemBlock)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func loadPrivateKeyToFile() (*ecdsa.PrivateKey, error) {
+	data, _ := os.ReadFile(privateKeyFile)
+	block, _ := pem.Decode(data)
+	return x509.ParseECPrivateKey(block.Bytes)
+}
+
+func isFileExists() bool {
+	_, err := os.Stat(privateKeyFile)
+	return err == nil
+}
+func init() {
+	var privKey *ecdsa.PrivateKey
+	if !isFileExists() {
+		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			slog.Error("Failed to generate private key", "err", err)
+			return
+		}
+		err = savePrivateKeyToFile(privKey)
+		if err != nil {
+			slog.Error("Failed to save private key", "err", err)
+			return
+		}
+	}
+	privKey, _ = loadPrivateKeyToFile()
 	privateKey = privKey
 	publicKey = privateKey.Public().(*ecdsa.PublicKey)
 }
@@ -40,11 +84,24 @@ func GetMyPublicKey() ecdsa.PublicKey {
 }
 
 func GetMyPublicKeyBytes() (Key, error) {
-	derBytes, err := x509.MarshalPKIXPublicKey(&publicKey)
-	if err != nil {
-		return Key{}, err
+	x := publicKey.X.Bytes()
+	y := publicKey.Y.Bytes()
+
+	xKey := make([]byte, BYTE_LENGTH_32)
+	yKey := make([]byte, BYTE_LENGTH_32)
+
+	if len(x) != 32 || len(y) != 32 {
+		return Key{}, errors.New("incorrect publicKey")
 	}
-	return Key(derBytes), nil
+
+	copy(xKey[BYTE_LENGTH_32-len(x):], x)
+	copy(yKey[BYTE_LENGTH_32-len(y):], y)
+
+	var key Key
+	copy(key[0:BYTE_LENGTH_32], xKey)
+	copy(key[BYTE_LENGTH_32:], yKey)
+
+	return key, nil
 }
 
 // The code below comes from the project description

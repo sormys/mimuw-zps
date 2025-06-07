@@ -6,17 +6,21 @@ import (
 	"io"
 	"log/slog"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/networking"
+	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/utility"
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
 const PEERS_ENDPOINT = "peers"
 const ADDRESS_ENDPOINT = "addresses"
 const KEY_ENDPOINT = "key"
+const GALENE = "galene.org"
 
 // Struct used for connection to central server under provided url
 type Server struct {
@@ -186,7 +190,7 @@ func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
 
 // Registers the user's key with the server and performs the initial handshake.
 // Return nil if successful; otherwise, returns and error
-func (s Server) ConnectWithServer(nickname string, addr net.Addr) error {
+func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketConn) error {
 	key, err := encryption.GetMyPublicKeyBytes()
 	if err != nil {
 		return err
@@ -197,26 +201,26 @@ func (s Server) ConnectWithServer(nickname string, addr net.Addr) error {
 		return err
 	}
 
+	peers, _ := s.GetPeers()
+	if !slices.Contains(peers, GALENE) {
+		return errors.New("server's user does not exist")
+	}
+	addr, err := s.GetPeerAddresses(GALENE)
+	if err != nil || len(addr) == 0 {
+		return errors.New("problem with server's address")
+	}
+
+	servAddr, err := net.ResolveUDPAddr("udp4", getIPv4(addr))
+	if err != nil {
+		return err
+	}
+
 	id := utility.GenerateID()
-	buf := bytes.NewBuffer(CreateHandshakeBytes(HELLO, nickname, id))
-	request, err := http.NewRequest(http.MethodPut, s.url, buf)
-	if err != nil {
-		return err
-	}
+	message := CreateHandshakeBytes(HELLO, nickname, id)
+	packageSent := packet_manager.PacketSendRequest{Addr: servAddr, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		slog.Warn("Failed to send register request to server", "err", err)
-		return err
-	}
-
-	defer response.Body.Close()
-	bodyBytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return err
-	}
-
-	if !verifyHandshakeServer(bodyBytes, id) {
+	received := conn.SendRequest(packageSent)
+	if received.MessType != networking.HELLO_REPLY || !bytes.Equal(received.ID[:], id[:]) {
 		return errors.New("failed to receive handshake from server")
 	}
 	return nil

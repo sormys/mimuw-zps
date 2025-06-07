@@ -87,10 +87,10 @@ func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_ma
 }
 func main() {
 
-	waiterCount := uint32(1)
-	senderCount := uint32(1)
+	waiterCount := uint32(2)
+	senderCount := uint32(2)
 	channel_size := 10
-	receiverCount := uint32(1)
+	receiverCount := uint32(2)
 	myAddress := ":0"
 	server_url := "https://galene.org:8448"
 	myReceiverCount := 1
@@ -121,7 +121,7 @@ func main() {
 		go handlerReceiver(conn, channelToSend, server)
 	}
 
-	err = server.ConnectWithServer(nickname, addr)
+	err = server.ConnectWithServer(nickname, conn)
 	if err != nil {
 		log.Fatal("Failed to connect to the server " + err.Error())
 	}
