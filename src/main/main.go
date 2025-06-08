@@ -11,6 +11,9 @@ import (
 	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
 	"net"
+	"os"
+
+	"github.com/lmittmann/tint"
 )
 
 var nickname string
@@ -87,6 +90,23 @@ func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_ma
 		}(data)
 	}
 }
+
+func setupLogger() {
+	w := os.Stderr
+	slog.SetDefault(slog.New(
+		tint.NewHandler(w, &tint.Options{
+			Level: slog.LevelDebug,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Value.Kind() == slog.KindAny {
+					if _, ok := a.Value.Any().(error); ok {
+						return tint.Attr(9, a)
+					}
+				}
+				return a
+			},
+		})))
+}
+
 func main() {
 
 	waiterCount := uint32(2)
@@ -97,6 +117,8 @@ func main() {
 	server_url := "https://galene.org:8448"
 	myReceiverCount := 1
 	n := "parowkozerca"
+
+	setupLogger()
 
 	server := srv_conn.NewServer(server_url)
 

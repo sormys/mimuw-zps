@@ -51,7 +51,7 @@ func getHashFromRootReply(data networking.ReceivedMessageData) message_manager.H
 }
 
 func getNameFromReceivedHandshake(data networking.ReceivedMessageData) string {
-	nameBytes := data.Data[EXT_LEN : EXT_LEN+data.Length]
+	nameBytes := data.Data[EXT_LEN:data.Length]
 	slog.Debug("Got name from Hanshake", "name", string(nameBytes))
 	return string(nameBytes)
 }
@@ -60,7 +60,7 @@ func getSignatureFromReceivedHandshake(data networking.ReceivedMessageData) encr
 	if len(data.Data) < int(data.Length)+encryption.KEY_LENGTH {
 		return encryption.EMPTY_SIGNATURE
 	}
-	return encryption.Signature(data.Data[data.Length:+encryption.KEY_LENGTH])
+	return encryption.Signature(data.Data[data.Length : data.Length+encryption.KEY_LENGTH])
 }
 
 func CreateHandshake(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
@@ -69,7 +69,7 @@ func CreateHandshake(address net.Addr, id utility.ID, nickname string) packet_ma
 }
 func createHandshakeReply(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
 	message := srv_conn.CreateHandshakeBytes(HELLO_REPLY, nickname, id)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: nil}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 }
 
 func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash message_manager.Hash) encryption.Message {
@@ -101,7 +101,7 @@ func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequ
 	message = append(message, ERROR...)
 	message = append(message, length...)
 	message = append(message, []byte(error_string)...)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: nil}
+	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 }
 
 func createDatumRequest(address net.Addr, hash message_manager.Hash) packet_manager.PacketSendRequest {
