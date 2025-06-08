@@ -12,7 +12,7 @@ const BUF_SIZE = 2048
 // Receives a message (sigle UDP packet) and sends received initialy validated
 // data to waiter via replyChan or requestChan depending on the message type
 // (reply -> replyChan, request -> requestChan).
-func Receiver(conn net.PacketConn,
+func ReceiverWorker(conn net.PacketConn,
 	replyChan chan<- networking.ReceivedMessageData,
 	requestChan chan<- networking.ReceivedMessageData) {
 	buf := make([]byte, BUF_SIZE)
@@ -35,10 +35,21 @@ func Receiver(conn net.PacketConn,
 		}
 		if receivedMessage.Err == nil && networking.IsRequest(receivedMessage.MessType) {
 			// A request arrived
-			slog.Warn("Forwarding request")
 			requestChan <- receivedMessage
 			continue
 		}
 		replyChan <- receivedMessage
+	}
+}
+
+func Receiver(conn net.PacketConn, replyChan chan<- networking.ReceivedMessageData,
+	requestChan chan<- networking.ReceivedMessageData, workerCount uint32) {
+
+	if workerCount < 1 {
+		slog.Error("Invalid number of receiver workers provided")
+		return
+	}
+	for range workerCount {
+		go ReceiverWorker(conn, replyChan, requestChan)
 	}
 }

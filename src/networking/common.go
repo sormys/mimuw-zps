@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+const WORKER_CHAN_BUF_SIZE = 1024
+const MAIN_CHAN_BUF_SIZE = 2048
+
 type MessageType = string
 
 const (
@@ -93,7 +96,8 @@ func StoreReceivedMessageData(message encryption.Message, addr net.Addr) Receive
 	}
 	lengthBytes := message[5:7]
 	length := utility.GetNumberFromBytes(lengthBytes)
-	if !utility.EqualIntUint16(len(message), MIN_MESSAGE_SIZE+length) {
+	if !utility.EqualIntUint16(len(message), MIN_MESSAGE_SIZE+length) && !utility.EqualIntUint16(len(message), MIN_MESSAGE_SIZE+length+64) {
+		// With or without signature
 		return ReceivedMessageData{ID: id, Err: errors.New(
 			"received message with incorrect data (declared length do not match)")}
 	}

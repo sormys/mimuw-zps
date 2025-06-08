@@ -37,7 +37,7 @@ func TestWaiterCorrectMessage(t *testing.T) {
 	retryReqChan := make(chan networking.SendRequest, bufSize)
 	receiverChannel := make(chan networking.ReceivedMessageData, bufSize)
 
-	go Waiter(senderChan, retryReqChan, receiverChannel)
+	go WaiterWorker(senderChan, retryReqChan, receiverChannel)
 	retryReqChan <- sendReqLong
 	retryReqChan <- sendReqShort
 
@@ -104,7 +104,7 @@ func TestWaiterGetsReplyMessage(t *testing.T) {
 	retryReqChan := make(chan networking.SendRequest, bufSize)
 	receiverChannel := make(chan networking.ReceivedMessageData, bufSize)
 
-	go Waiter(senderChan, retryReqChan, receiverChannel)
+	go WaiterWorker(senderChan, retryReqChan, receiverChannel)
 	retryReqChan <- sendReq
 
 	// Check if message was retried
@@ -170,7 +170,7 @@ func TestWaiterReplyPolicyErr(t *testing.T) {
 	retryReqChan := make(chan networking.SendRequest, bufSize)
 	receiverChannel := make(chan networking.ReceivedMessageData, bufSize)
 
-	go Waiter(senderChan, retryReqChan, receiverChannel)
+	go WaiterWorker(senderChan, retryReqChan, receiverChannel)
 	retryReqChan <- sendReq
 
 	select {

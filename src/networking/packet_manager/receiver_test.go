@@ -44,7 +44,7 @@ func TestReceiverCorrectMessages(t *testing.T) {
 	mockUDPConn := new(mockRecvUDPConn)
 	mockUDPConn.On("ReadFrom", mock.Anything).Return(string(msg), len([]byte(msg)), senderAddr, nil)
 
-	go Receiver(mockUDPConn, replyChan, requestChan)
+	go ReceiverWorker(mockUDPConn, replyChan, requestChan)
 
 	for range 10 {
 		select {
@@ -73,7 +73,7 @@ func TestReceiverIncorrectLenMessages(t *testing.T) {
 	mockUDPConn := new(mockRecvUDPConn)
 	mockUDPConn.On("ReadFrom", mock.Anything).Return(string(msg), len([]byte(msg)), senderAddr, nil)
 
-	go Receiver(mockUDPConn, replyChan, requestChan)
+	go ReceiverWorker(mockUDPConn, replyChan, requestChan)
 
 	for range 10 {
 		select {
@@ -105,7 +105,7 @@ func TestReceiverIngoresReadErrMessages(t *testing.T) {
 	mockUDPConn.On("ReadFrom", mock.Anything).Return("", 0, senderAddr, errors.New("FakeError")).Once()
 	mockUDPConn.On("ReadFrom", mock.Anything).Return(string(msg), len([]byte(msg)), senderAddr, nil)
 
-	go Receiver(mockUDPConn, replyChan, requestChan)
+	go ReceiverWorker(mockUDPConn, replyChan, requestChan)
 
 	select {
 	case message := <-replyChan:
@@ -136,7 +136,7 @@ func TestReceiverAwaitsMessages(t *testing.T) {
 		string(msg), len([]byte(msg)), senderAddr, nil).WaitUntil(
 		time.After(2 * timeout))
 
-	go Receiver(mockUDPConn, replyChan, requestChan)
+	go ReceiverWorker(mockUDPConn, replyChan, requestChan)
 
 	select {
 	case <-replyChan:
@@ -172,7 +172,7 @@ func TestReceiverForwardsRequestsMessages(t *testing.T) {
 		"ReadFrom", mock.Anything).Return(
 		string(msg), len([]byte(msg)), senderAddr, nil)
 
-	go Receiver(mockUDPConn, replyChan, requestChan)
+	go ReceiverWorker(mockUDPConn, replyChan, requestChan)
 
 	select {
 	case message := <-requestChan:

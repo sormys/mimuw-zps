@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+type worker struct {
+	send chan<- networking.SendRequest
+	recv chan<- networking.ReceivedMessageData
+}
+
 type messageStatus struct {
 	sendRequest *networking.SendRequest
 	reply       *networking.ReceivedMessageData
@@ -75,10 +80,10 @@ func trySendCallback(callbackChan chan<- networking.ReceivedMessageData,
 //     received retry request has passed without receiving a reply
 //
 // Important Note:
-// Waiter assumes senderChan and callbackChan in SendRequest can immediately
+// WaiterWorker assumes senderChan and callbackChan in SendRequest can immediately
 // receive data. If data cannot be send through a channel it will be skipped
 // and forgotten.
-func Waiter(
+func WaiterWorker(
 	senderChan chan<- networking.SendRequest,
 	retryReqChan <-chan networking.SendRequest,
 	receiverChan <-chan networking.ReceivedMessageData) {
@@ -118,7 +123,9 @@ func Waiter(
 					slog.Error("Received duplicated task, ignoring", "id", id)
 					continue
 				}
-				trySendCallback(status.sendRequest.CallbackChan, *status.reply)
+				if status.sendRequest != nil {
+					trySendCallback((*status.sendRequest).CallbackChan, *status.reply)
+				}
 				delete(messagesMap, id)
 				continue
 			}
@@ -133,7 +140,9 @@ func Waiter(
 				break
 			}
 			delete(messagesMap, reply.ID)
-			trySendCallback(status.sendRequest.CallbackChan, reply)
+			if status.sendRequest != nil {
+				trySendCallback((*status.sendRequest).CallbackChan, reply)
+			}
 		case <-time.After(timeout):
 			minRetry := retryHeap.Top().(retryTask)
 			if !time.Now().After(minRetry.replyDeadline) {
@@ -145,17 +154,52 @@ func Waiter(
 				slog.Warn("Deadline passed for request but no request was found in the retry map")
 				break
 			}
-			select {
-			case senderChan <- *status.sendRequest:
-				slog.Debug("Retrying message", "message ID", utility.GetMessageID(status.sendRequest.Message))
-			default:
-				// We assume that the system is clogged with messages, so we have to skip some of them
-				errData := networking.ReceivedMessageData{
-					Err: errors.New("could not send data to sender chan retry aborted")}
-				trySendCallback(status.sendRequest.CallbackChan, errData)
+			if (*status.sendRequest).CallbackChan != nil {
+				select {
+				case senderChan <- *status.sendRequest:
+					slog.Debug("Retrying message", "message ID", utility.GetMessageID((*status.sendRequest).Message))
+				default:
+					// We assume that the system is clogged with messages, so we have to skip some of them
+					errData := networking.ReceivedMessageData{
+						Err: errors.New("could not send data to sender chan retry aborted")}
+					trySendCallback((*status.sendRequest).CallbackChan, errData)
+				}
 			}
 			delete(messagesMap, minRetry.sendRequestId)
 		}
 
+	}
+}
+
+func Waiter(senderChan chan<- networking.SendRequest,
+	retryReqChan <-chan networking.SendRequest,
+	receiverChan <-chan networking.ReceivedMessageData, workerCount uint32) {
+	if workerCount < 1 {
+		slog.Error("Invalid number of sender workers provided")
+		return
+	}
+	workers := make([]worker, workerCount)
+	for i := range workerCount {
+		workerSend := make(chan networking.SendRequest, networking.WORKER_CHAN_BUF_SIZE)
+		workerRecv := make(chan networking.ReceivedMessageData, networking.WORKER_CHAN_BUF_SIZE)
+		workers[i] = worker{send: workerSend, recv: workerRecv}
+		go WaiterWorker(senderChan, workerSend, workerRecv)
+	}
+
+	bucketSize := utility.MAX_ID / uint32(workerCount)
+	getWorker := func(id uint32) worker {
+		// Make sure we will be in the array range
+		messageId := min(id, utility.MAX_ID-1)
+		return workers[messageId/uint32(bucketSize)]
+	}
+	for {
+		select {
+		case request := <-retryReqChan:
+			messageId := utility.ConvertIDToUint(utility.GetMessageID(request.Message))
+			getWorker(messageId).send <- request
+		case data := <-receiverChan:
+			messageId := utility.ConvertIDToUint(data.ID)
+			getWorker(messageId).recv <- data
+		}
 	}
 }
