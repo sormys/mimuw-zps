@@ -86,6 +86,10 @@ func calculateSleep(retryHeap *TaskHeap) time.Duration {
 
 func handleRetryRequest(request networking.SendRequest, retryHeap *TaskHeap,
 	messagesMap map[utility.ID]messageStatus) {
+	if request.MessRetryPolicy == nil {
+		// This message should not be retried
+		return
+	}
 
 	slog.Debug("Received retry request", "request", request)
 	id := utility.GetMessageID(request.Message)
@@ -103,7 +107,7 @@ func handleRetryRequest(request networking.SendRequest, retryHeap *TaskHeap,
 	}
 	if status.reply != nil {
 		// Already got reply for this task
-		trySendCallback((*status.sendRequest).CallbackChan, *status.reply)
+		trySendCallback(request.CallbackChan, *status.reply)
 		delete(messagesMap, id)
 	} else if status.reply == nil {
 		slog.Warn("Received duplicated task, replacing old task", "id", id)
