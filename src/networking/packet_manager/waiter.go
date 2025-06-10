@@ -108,7 +108,7 @@ func WaiterWorker(
 
 		select {
 		case request := <-retryReqChan:
-			slog.Debug("Received retry request", "request", request)
+			slog.Debug("Retry canceled by retry policy", "request id", utility.GetMessageID(request.Message))
 			id := utility.GetMessageID(request.Message)
 			task, err := createRetryTask(&request, id)
 			if err != nil {
@@ -119,7 +119,7 @@ func WaiterWorker(
 			heap.Push(retryHeap, task)
 			status, exists := messagesMap[id]
 			if exists {
-				if status.reply.Err == nil {
+				if (*status.reply).Err == nil {
 					slog.Error("Received duplicated task, ignoring", "id", id)
 					continue
 				}
@@ -132,7 +132,7 @@ func WaiterWorker(
 			messagesMap[id] = messageStatus{sendRequest: &request}
 		case reply := <-receiverChan:
 			// TODO(sormys) handle case where malicious peer tries to clog the system with replies
-			slog.Debug("Recevied reply", "reply", reply)
+			slog.Debug("Recevied reply", "reply id", reply.ID, "addr", reply.Addr)
 			status, exists := messagesMap[reply.ID]
 			if !exists {
 				slog.Debug("Storing reply for later", "id", reply.ID)

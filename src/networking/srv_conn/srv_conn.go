@@ -6,14 +6,21 @@ import (
 	"io"
 	"log/slog"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/networking"
+	"mimuw_zps/src/networking/packet_manager"
+	"mimuw_zps/src/networking/peer_conn"
+	"mimuw_zps/src/utility"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
+	"time"
 )
 
 const PEERS_ENDPOINT = "peers"
 const ADDRESS_ENDPOINT = "addresses"
 const KEY_ENDPOINT = "key"
+const GALENE = "galene.org"
 
 // Struct used for connection to central server under provided url
 type Server struct {
@@ -152,6 +159,81 @@ func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
 	return splitLines(body), nil
 }
 
+// Get all required info about active Peers
+func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
+	var peers []peer_conn.Peer
+	var errors []error
+	nicknames, err := s.GetPeers()
+	if err != nil {
+		return nil, []error{err}
+	}
+	//It can be slow if we have a lots of users, we can do it in parallel in the future
+	for i := range nicknames {
+		addr, err := s.GetPeerAddresses(nicknames[i])
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		addresses, errArray := convertStringToAddr(addr)
+		if errArray != nil {
+			errors = append(errors, errArray...)
+			continue
+		}
+		key, err := s.GetPeerKey(nicknames[i])
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		peers = append(peers, peer_conn.NewPeer(nicknames[i], addresses, key))
+	}
+	return peers, errors
+}
+
+// Registers the user's key with the server and performs the initial handshake.
+// Return nil if successful; otherwise, returns and error
+func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketConn) error {
+	key, err := encryption.GetMyPublicKeyBytes()
+	if err != nil {
+		return err
+	}
+
+	err = s.RegisterKey(nickname, key)
+	if err != nil {
+		return err
+	}
+
+	peers, _ := s.GetPeers()
+	if !slices.Contains(peers, GALENE) {
+		return errors.New("server's user does not exist")
+	}
+	addr, err := s.GetPeerAddresses(GALENE)
+	if err != nil || len(addr) == 0 {
+		return errors.New("problem with server's address")
+	}
+
+	id := utility.GenerateID()
+	message := CreateHandshakeBytes(HELLO, nickname, id)
+	for i := range addr {
+		servAddr, err := getUDPaddr(addr[i])
+		if err != nil {
+			return err
+		}
+		packageSent := packet_manager.PacketSendRequest{Addr: servAddr, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
+
+		received := conn.SendRequest(packageSent)
+		if received.Err != nil {
+			slog.Error("failed to send request", "err", received.Err)
+		}
+	}
+
+	time.Sleep(1 * time.Second)
+	addresses, err := s.GetPeerAddresses(nickname)
+	if err != nil || len(addresses) == 0 {
+		return errors.New("failed to register address to the server")
+	}
+	return nil
+
+}
 func splitLines(str string) []string {
 	lines := strings.Split(str, "\n")
 	// Remove empty line from split

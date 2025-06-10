@@ -5,7 +5,6 @@ import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/utility"
 	"net"
-	"time"
 )
 
 const WORKER_CHAN_BUF_SIZE = 1024
@@ -54,11 +53,8 @@ type ReceivedMessageData struct {
 	MessType MessageType
 	Length   uint16
 	Data     []byte
+	Raw      []byte
 	Err      error
-}
-
-type RetryPolicy interface {
-	NextRetry() (time.Duration, error)
 }
 
 type SendRequest struct {
@@ -101,5 +97,5 @@ func StoreReceivedMessageData(message encryption.Message, addr net.Addr) Receive
 		return ReceivedMessageData{ID: id, Err: errors.New(
 			"received message with incorrect data (declared length do not match)")}
 	}
-	return ReceivedMessageData{Addr: addr, ID: id, MessType: messageType, Length: length, Data: message[7:], Err: nil}
+	return ReceivedMessageData{Addr: addr, ID: id, MessType: messageType, Length: length, Data: message[7:], Raw: message, Err: nil}
 }
