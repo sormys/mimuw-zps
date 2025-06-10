@@ -7,7 +7,7 @@ import (
 
 // This tree is most likely not complete, and is constructed by adding nodes
 // from received data. This means that we verify the integrity of the tree as
-// we built it.
+// we build it.
 type remoteMerkleTree struct {
 	nodeMap  map[string]*remoteNode
 	rootNode *remoteNode
@@ -54,50 +54,38 @@ func (rc remoteNode) Data() []byte {
 	return rc.data
 }
 
-func (rd *remoteNode) AddChild(child *remoteNode) error {
-	hasDir := false
-	hasCh := false
-	switch child.Type() {
-	case CHUNK:
-		hasCh = true
-	case DIRECTORY:
-		hasDir = true
-	case BIG:
-		hasDir = child.hasDirectoryChild
-		hasCh = child.hasChunkChild
-	default:
-		return errors.New("unknown child node type")
-	}
-	err := rd.UpdateNodeData(hasDir, hasCh)
-	if err != nil {
-		return nil
-	}
-	// propagate name
-	child.SetName(rd.name)
-	rd.children = append(rd.children, child)
-	return nil
-}
-
-func (rd *remoteNode) UpdateNodeData(hasDirectory bool, hasChunk bool) error {
+func (rd *remoteNode) registerChildrenType(nodeType NodeType) error {
 	if rd.Type() != BIG {
 		return nil
 	}
-	err := errors.New("big node has multiple types of values")
-	if rd.hasDirectoryChild && hasChunk {
-		return err
-	} else if rd.hasChunkChild && hasDirectory {
-		return err
-	}
-	newDirVal := rd.hasDirectoryChild || hasDirectory
-	newChVal := rd.hasChunkChild || hasChunk
-	if rd.parent != nil && rd.parent.Type() == BIG {
-		err = rd.parent.UpdateNodeData(newDirVal, newChVal)
-		if err != nil {
-			return err
+	switch nodeType {
+	case NO_TYPE, BIG:
+		// Nothing to do
+	case CHUNK:
+		if rd.hasDirectoryChild {
+			return errors.New("big node has multiple types of values")
 		}
+		if !rd.hasChunkChild && rd.parent != nil {
+			// State has changed
+			if err := rd.parent.registerChildrenType(CHUNK); err != nil {
+				return err
+			}
+		}
+		rd.hasChunkChild = true
+	case DIRECTORY:
+		if rd.hasChunkChild {
+			return errors.New("big node has multiple types of values")
+		}
+		if !rd.hasDirectoryChild && rd.parent != nil {
+			// State has changed
+			if err := rd.parent.registerChildrenType(DIRECTORY); err != nil {
+				return err
+			}
+		}
+		rd.hasDirectoryChild = true
+	default:
+		return errors.New("unknown node type")
 	}
-	rd.hasChunkChild = newChVal
-	rd.hasDirectoryChild = newDirVal
 	return nil
 }
 
@@ -140,7 +128,11 @@ func (rmt *remoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 	if expectedHash != nodeHash {
 		return errors.New("invalid data (hashes do not match)")
 	}
-	// TODO(sormys) propagate up the tree the info about the type of the node
+	if node.parent != nil {
+		if err := node.parent.registerChildrenType(CHUNK); err != nil {
+			return err
+		}
+	}
 	node.nodeType = CHUNK
 	node.data = data
 	return nil
@@ -168,15 +160,20 @@ func (rmt *remoteMerkleTree) DiscoverAsDirectory(
 	if hashStr != node.hash {
 		return errors.New("invalid children (hashes do not match)")
 	}
-	// TODO(sormys) propagate up the tree the info about the type of the node
+	if node.parent != nil {
+		if err := node.parent.registerChildrenType(DIRECTORY); err != nil {
+			return err
+		}
+	}
 	newChildren := make([]*remoteNode, len(children))
 	for i, ch := range children {
 		hashStr := convertHashBytesToString(ch.hash)
-		newChildren[i] = &remoteNode{name: ch.name,
+		newChildren[i] = &remoteNode{name: ch.name, parent: node,
 			hash: convertHashBytesToString(ch.hash), nodeType: NO_TYPE}
 		rmt.nodeMap[hashStr] = newChildren[i]
 	}
 	node.children = newChildren
+	node.nodeType = DIRECTORY
 	return nil
 }
 
@@ -205,9 +202,11 @@ func (rmt *remoteMerkleTree) DiscoverAsBig(
 	newChildren := make([]*remoteNode, len(childrenHashes))
 	for i, chHash := range childrenHashes {
 		strHash := convertHashBytesToString(chHash)
-		newChildren[i] = &remoteNode{hash: strHash, nodeType: NO_TYPE}
+		newChildren[i] = &remoteNode{hash: strHash,
+			parent: node, nodeType: NO_TYPE}
 		rmt.nodeMap[strHash] = newChildren[i]
 	}
 	node.children = newChildren
+	node.nodeType = BIG
 	return nil
 }

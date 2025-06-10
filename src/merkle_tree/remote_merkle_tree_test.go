@@ -15,13 +15,13 @@ func TestVerifyCorrect(t *testing.T) {
 	chunk2Sha := sha256.New()
 	chunk2Sha.Write(chunk2Data)
 	chunk2Str := hex.EncodeToString(chunk2Sha.Sum(nil))
-	directorySha := sha256.New()
-	directorySha.Write(chunk1Sha.Sum(nil))
-	directorySha.Write(chunk2Sha.Sum(nil))
-	directoryStr := hex.EncodeToString(directorySha.Sum(nil))
+	bigSha := sha256.New()
+	bigSha.Write(chunk1Sha.Sum(nil))
+	bigSha.Write(chunk2Sha.Sum(nil))
+	bigStr := hex.EncodeToString(bigSha.Sum(nil))
 
-	tree := NewRemoteMerkleTree(directoryStr)
-	if err := tree.DiscoverAsBig(directoryStr, [][]byte{chunk1Sha.Sum(nil),
+	tree := NewRemoteMerkleTree(bigStr)
+	if err := tree.DiscoverAsBig(bigStr, [][]byte{chunk1Sha.Sum(nil),
 		chunk2Sha.Sum(nil)}); err != nil {
 		t.Errorf("Error while converting node to big %s", err)
 	}
@@ -42,13 +42,13 @@ func TestVerifyIncorrect(t *testing.T) {
 	chunk2Sha := sha256.New()
 	chunk2Sha.Write(chunk2Data)
 	chunk2Str := hex.EncodeToString(chunk2Sha.Sum(nil))
-	directorySha := sha256.New()
-	directorySha.Write(chunk1Sha.Sum(nil))
-	directorySha.Write(chunk2Sha.Sum(nil))
-	directoryStr := hex.EncodeToString(directorySha.Sum(nil))
+	bigSha := sha256.New()
+	bigSha.Write(chunk1Sha.Sum(nil))
+	bigSha.Write(chunk2Sha.Sum(nil))
+	bigStr := hex.EncodeToString(bigSha.Sum(nil))
 
-	tree := NewRemoteMerkleTree(directoryStr)
-	if err := tree.DiscoverAsBig(directoryStr, [][]byte{chunk1Sha.Sum(nil),
+	tree := NewRemoteMerkleTree(bigStr)
+	if err := tree.DiscoverAsBig(bigStr, [][]byte{chunk1Sha.Sum(nil),
 		chunk2Sha.Sum(nil)}); err != nil {
 		t.Errorf("Error while converting node to big %s", err)
 	}
@@ -80,5 +80,36 @@ func TestEmptyDirectory(t *testing.T) {
 	}
 	if err := tree.DiscoverAsDirectory(hash1Str, []DirectoryRecordRaw{}); err == nil {
 		t.Errorf("No error occured on empty directory")
+	}
+}
+
+func TestConflictingNodeTypesInBig(t *testing.T) {
+	dirChunkName := "one"
+	dirChunkData := []byte{0x10, 0x20, 0x01, 0x30}
+	chunkData := []byte{0x11, 0x32, 0x81, 0x32}
+	DirChunkSha := sha256.New()
+	DirChunkSha.Write(dirChunkData)
+	DirSha := sha256.New()
+	DirSha.Write(DirChunkSha.Sum(nil))
+	DirStr := hex.EncodeToString(DirSha.Sum(nil))
+	ChunkSha := sha256.New()
+	ChunkSha.Write(chunkData)
+	ChunkStr := hex.EncodeToString(ChunkSha.Sum(nil))
+	bigSha := sha256.New()
+	bigSha.Write(DirSha.Sum(nil))
+	bigSha.Write(ChunkSha.Sum(nil))
+	bigStr := hex.EncodeToString(bigSha.Sum(nil))
+
+	tree := NewRemoteMerkleTree(bigStr)
+	if err := tree.DiscoverAsBig(bigStr, [][]byte{DirSha.Sum(nil),
+		ChunkSha.Sum(nil)}); err != nil {
+		t.Errorf("Error while converting node to big %s", err)
+	}
+	if err := tree.DiscoverAsChunk(ChunkStr, chunkData); err != nil {
+		t.Errorf("Error while converting node to chunk %s", err)
+	}
+	if err := tree.DiscoverAsDirectory(DirStr, []DirectoryRecordRaw{{
+		name: dirChunkName, hash: DirChunkSha.Sum(nil)}}); err == nil {
+		t.Errorf("No error when there are conflicting type in big node")
 	}
 }
