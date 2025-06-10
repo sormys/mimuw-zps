@@ -1,32 +1,53 @@
 package merkle_tree
 
 import (
-	h "hash"
+	"crypto/sha256"
+	"encoding/hex"
+	"hash"
 )
 
+type NodeType string
+
+const (
+	NO_TYPE   NodeType = "no type"
+	CHUNK     NodeType = "chunk"
+	DIRECTORY NodeType = "directory"
+	BIG       NodeType = "big"
+)
+
+func hashData(childrenHash [][]byte) string {
+	h := sha256.New()
+	for _, hash := range childrenHash {
+		h.Write(hash)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func convertHashToString(hash hash.Hash) string {
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func convertHashBytesToString(hash []byte) string {
+	return hex.EncodeToString(hash)
+}
+
 type MerkleTree interface {
-	GetRoot() Node
-	GetNode(h.Hash) Node
+	Root() Node
+	GetNode(string) Node
 }
 
 type Node interface {
-	GetName() string
-	GetHash() h.Hash
-	GetParent() Node
+	Type() NodeType
+	Name() string
+	Hash() string
+	Parent() Node
+	Children() []Node
+	Data() []byte
+	SetName(string)
 	Verify() bool
 }
 
-type ChunkNode interface {
-	Node
-	GetData() []byte
-}
-
-type DirectoryNode interface {
-	Node
-	GetChildren() []Node
-}
-
-type BigNode interface {
-	Node
-	GetChildren() []Node
+type DirectoryRecordRaw struct {
+	name string
+	hash []byte
 }
