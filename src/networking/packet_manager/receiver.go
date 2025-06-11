@@ -19,7 +19,7 @@ func ReceiverWorker(conn net.PacketConn,
 	for {
 		n, addr, err := conn.ReadFrom(buf)
 
-		if err != nil || n <= networking.MIN_MESSAGE_SIZE {
+		if err != nil || n < networking.MIN_MESSAGE_SIZE {
 			slog.Error("Problem with read data", "err", err)
 			continue
 		}
