@@ -31,22 +31,6 @@ func convertHashBytesToString(hash []byte) string {
 	return hex.EncodeToString(hash)
 }
 
-type MerkleTree interface {
-	Root() Node
-	GetNode(string) Node
-}
-
-type Node interface {
-	Type() NodeType
-	Name() string
-	Hash() string
-	Parent() Node
-	Children() []Node
-	Data() []byte
-	SetName(string)
-	Verify() bool
-}
-
 type DirectoryRecordRaw struct {
 	name string
 	hash []byte
