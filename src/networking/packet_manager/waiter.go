@@ -136,6 +136,9 @@ func handleRetryDeadlinePassed(retryHeap *TaskHeap,
 	messagesMap map[utility.ID]messageStatus,
 	senderChan chan<- networking.SendRequest) {
 
+	if retryHeap.Len() == 0 {
+		return
+	}
 	minRetry := retryHeap.Top().(retryTask)
 	if !time.Now().After(minRetry.replyDeadline) {
 		return
