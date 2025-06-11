@@ -55,11 +55,8 @@ func (h TaskHeap) Top() any {
 
 func createRetryTask(request *networking.SendRequest, id utility.ID) (retryTask, error) {
 	wait, err := request.MessRetryPolicy.NextRetry()
-	if err != nil {
-		return retryTask{}, err
-	}
 	deadline := time.Now().Add(wait)
-	return retryTask{replyDeadline: deadline, sendRequestId: id}, nil
+	return retryTask{replyDeadline: deadline, sendRequestId: id}, err
 }
 
 func trySendCallback(callbackChan chan<- networking.ReceivedMessageData,
@@ -69,6 +66,108 @@ func trySendCallback(callbackChan chan<- networking.ReceivedMessageData,
 	default:
 		slog.Error("Failed to send data to callback")
 	}
+}
+
+func calculateSleep(retryHeap *TaskHeap) time.Duration {
+	// Long timeout when no messages should be retried
+	timeout := time.Duration((2 * time.Minute).Nanoseconds())
+	if retryHeap.Len() > 0 {
+		minRetry := retryHeap.Top().(retryTask)
+		now := time.Now()
+		if now.After(minRetry.replyDeadline) {
+			// Already past the deadline - send asap
+			timeout = time.Nanosecond
+		} else {
+			timeout = time.Duration(minRetry.replyDeadline.Sub(now).Nanoseconds())
+		}
+	}
+	return timeout
+}
+
+func handleRetryRequest(request networking.SendRequest, retryHeap *TaskHeap,
+	messagesMap map[utility.ID]messageStatus) {
+	if request.MessRetryPolicy == nil {
+		// This message should not be retried
+		return
+	}
+
+	slog.Debug("Received retry request", "request", request)
+	id := utility.GetMessageID(request.Message)
+	task, err := createRetryTask(&request, id)
+	if err != nil {
+		slog.Debug("Retry canceled by retry policy", "request id", utility.GetMessageID(request.Message))
+		// No more retries done, will only wait for potential reply
+		request.MessRetryPolicy = nil
+	}
+	heap.Push(retryHeap, task)
+	status, exists := messagesMap[id]
+	if !exists {
+		messagesMap[id] = messageStatus{sendRequest: &request}
+		return
+	}
+	if status.reply != nil {
+		// Already got reply for this task
+		trySendCallback(request.CallbackChan, *status.reply)
+		delete(messagesMap, id)
+	} else if status.reply == nil {
+		slog.Warn("Received duplicated task, replacing old task", "id", id)
+		status.sendRequest = &request
+	}
+}
+
+func handleReply(reply networking.ReceivedMessageData,
+	messagesMap map[utility.ID]messageStatus) {
+
+	// TODO(sormys) handle case where malicious peer tries to clog the system with replies
+	slog.Debug("Recevied reply", "reply id", reply.ID)
+	status, exists := messagesMap[reply.ID]
+	if !exists {
+		slog.Debug("Storing reply for later", "id", reply.ID)
+		messagesMap[reply.ID] = messageStatus{reply: &reply}
+		return
+	}
+	delete(messagesMap, reply.ID)
+	if status.sendRequest != nil {
+		trySendCallback((*status.sendRequest).CallbackChan, reply)
+	}
+}
+
+func handleRetryDeadlinePassed(retryHeap *TaskHeap,
+	messagesMap map[utility.ID]messageStatus,
+	senderChan chan<- networking.SendRequest) {
+
+	if retryHeap.Len() == 0 {
+		return
+	}
+	minRetry := retryHeap.Top().(retryTask)
+	if !time.Now().After(minRetry.replyDeadline) {
+		return
+	}
+	minRetry = retryHeap.Pop().(retryTask)
+	status, exists := messagesMap[minRetry.sendRequestId]
+	if !exists {
+		slog.Info("Deadline passed for request but no request was found in the retry map")
+		return
+	}
+	if (*status.sendRequest).CallbackChan != nil {
+		if (*status.sendRequest).MessRetryPolicy == nil {
+			errData := networking.ReceivedMessageData{
+				Err: errors.New("retried canceled by retry policy")}
+			trySendCallback((*status.sendRequest).CallbackChan, errData)
+		} else {
+			select {
+			case senderChan <- *status.sendRequest:
+				slog.Debug("Retrying message", "message ID", utility.GetMessageID((*status.sendRequest).Message))
+			default:
+				// We assume that the system is clogged with messages, so we have to skip some of them
+				errData := networking.ReceivedMessageData{
+					Err: errors.New("could not send data to sender chan retry aborted")}
+				trySendCallback((*status.sendRequest).CallbackChan, errData)
+			}
+		}
+	}
+	delete(messagesMap, minRetry.sendRequestId)
+
 }
 
 // Main brain of the packet manager.
@@ -91,81 +190,16 @@ func WaiterWorker(
 	messagesMap := map[utility.ID]messageStatus{}
 	retryHeap := &TaskHeap{}
 	heap.Init(retryHeap)
-	longTimeout := time.Duration((2 * time.Minute).Nanoseconds())
 	for {
-		// Long timeout when no messages should be retried
-		timeout := longTimeout
-		if retryHeap.Len() > 0 {
-			minRetry := retryHeap.Top().(retryTask)
-			now := time.Now()
-			if now.After(minRetry.replyDeadline) {
-				// Already past the deadline - send asap
-				timeout = time.Nanosecond
-			} else {
-				timeout = time.Duration(minRetry.replyDeadline.Sub(now).Nanoseconds())
-			}
-		}
+		timeout := calculateSleep(retryHeap)
 
 		select {
 		case request := <-retryReqChan:
-			slog.Debug("Retry canceled by retry policy", "request id", utility.GetMessageID(request.Message))
-			id := utility.GetMessageID(request.Message)
-			task, err := createRetryTask(&request, id)
-			if err != nil {
-				slog.Debug("Retry canceled by retry policy", "request", request)
-				request.CallbackChan <- networking.ReceivedMessageData{ID: id, Err: err}
-				break
-			}
-			heap.Push(retryHeap, task)
-			status, exists := messagesMap[id]
-			if exists {
-				if (*status.reply).Err == nil {
-					slog.Error("Received duplicated task, ignoring", "id", id)
-					continue
-				}
-				if status.sendRequest != nil {
-					trySendCallback((*status.sendRequest).CallbackChan, *status.reply)
-				}
-				delete(messagesMap, id)
-				continue
-			}
-			messagesMap[id] = messageStatus{sendRequest: &request}
+			handleRetryRequest(request, retryHeap, messagesMap)
 		case reply := <-receiverChan:
-			// TODO(sormys) handle case where malicious peer tries to clog the system with replies
-			slog.Debug("Recevied reply", "reply id", reply.ID, "addr", reply.Addr)
-			status, exists := messagesMap[reply.ID]
-			if !exists {
-				slog.Debug("Storing reply for later", "id", reply.ID)
-				messagesMap[reply.ID] = messageStatus{reply: &reply}
-				break
-			}
-			delete(messagesMap, reply.ID)
-			if status.sendRequest != nil {
-				trySendCallback((*status.sendRequest).CallbackChan, reply)
-			}
+			handleReply(reply, messagesMap)
 		case <-time.After(timeout):
-			minRetry := retryHeap.Top().(retryTask)
-			if !time.Now().After(minRetry.replyDeadline) {
-				break
-			}
-			minRetry = retryHeap.Pop().(retryTask)
-			status, exists := messagesMap[minRetry.sendRequestId]
-			if !exists {
-				slog.Warn("Deadline passed for request but no request was found in the retry map")
-				break
-			}
-			if (*status.sendRequest).CallbackChan != nil {
-				select {
-				case senderChan <- *status.sendRequest:
-					slog.Debug("Retrying message", "message ID", utility.GetMessageID((*status.sendRequest).Message))
-				default:
-					// We assume that the system is clogged with messages, so we have to skip some of them
-					errData := networking.ReceivedMessageData{
-						Err: errors.New("could not send data to sender chan retry aborted")}
-					trySendCallback((*status.sendRequest).CallbackChan, errData)
-				}
-			}
-			delete(messagesMap, minRetry.sendRequestId)
+			handleRetryDeadlinePassed(retryHeap, messagesMap, senderChan)
 		}
 
 	}

@@ -80,7 +80,7 @@ func getMinimalSize(messageType MessageType) int {
 }
 
 func StoreReceivedMessageData(message encryption.Message, addr net.Addr) ReceivedMessageData {
-	if len(message) < 7 {
+	if len(message) < MIN_MESSAGE_SIZE {
 		return ReceivedMessageData{Err: errors.New(
 			"received message of incorrect size from peer")}
 	}
