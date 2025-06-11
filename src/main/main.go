@@ -189,6 +189,7 @@ func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_ma
 			}
 
 			if err != nil {
+				connection_manager.SendErrorReply(conn, data.Addr, err)
 				tuiSender <- message_manager.ConvertErrorToTuiMessage(err)
 			}
 		}(data)

@@ -7,6 +7,23 @@ import (
 
 type RequestTuiType = string
 
+type Download struct {
+	Peer peer_conn.Peer
+	Hash Hash
+}
+
+const (
+	INFO           RequestTuiType = "connect"
+	RELOAD_CONTENT RequestTuiType = "reload_content"
+	RELOAD_PEERS   RequestTuiType = "reload_peers"
+	DOWNLOAD       RequestTuiType = "sent"
+	PEERS          RequestTuiType = "peers"
+	CONNECT        RequestTuiType = "connect"
+	GET_CONTENT    RequestTuiType = "get_content"
+)
+
+type Hash = [HASH_LENGTH]byte
+
 const (
 	INFO_TUI       RequestTuiType = "INFO_TUI"
 	ERROR_TUI      RequestTuiType = "ERROR_TUI"
