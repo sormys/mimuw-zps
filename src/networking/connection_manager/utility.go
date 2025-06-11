@@ -6,8 +6,6 @@ import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
-	"mimuw_zps/src/networking/packet_manager"
-	"mimuw_zps/src/networking/srv_conn"
 	"mimuw_zps/src/utility"
 	"net"
 	"strings"
@@ -63,15 +61,6 @@ func getSignatureFromReceivedHandshake(data networking.ReceivedMessageData) encr
 	return encryption.Signature(data.Data[data.Length : data.Length+encryption.KEY_LENGTH])
 }
 
-func CreateHandshake(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
-	message := srv_conn.CreateHandshakeBytes(HELLO, nickname, id)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
-}
-func createHandshakeReply(address net.Addr, id utility.ID, nickname string) packet_manager.PacketSendRequest {
-	message := srv_conn.CreateHandshakeBytes(HELLO_REPLY, nickname, id)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
-}
-
 func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash message_manager.Hash) encryption.Message {
 	length := utility.GetBytesFromNumber(message_manager.HASH_LENGTH)
 
@@ -82,12 +71,8 @@ func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessag
 	message = append(message, hash[:]...)
 	return message
 }
-func createRootRequest(address net.Addr, id utility.ID) packet_manager.PacketSendRequest {
-	message := createDatumRequestTemplate(id, ROOT_REQUEST, message_manager.Hash{})
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewRetryPolicyRequest()}
-}
 
-func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequest {
+func createErrorReply(err error) encryption.Message {
 	var error_string string = "nil"
 	if err != nil {
 		error_string = err.Error()
@@ -101,11 +86,5 @@ func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequ
 	message = append(message, ERROR...)
 	message = append(message, length...)
 	message = append(message, []byte(error_string)...)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
-}
-
-func createDatumRequest(address net.Addr, hash message_manager.Hash) packet_manager.PacketSendRequest {
-	id := utility.GenerateID()
-	message := createDatumRequestTemplate(id, DATUM_REQUEST, hash)
-	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewRetryPolicyRequest()}
+	return encryption.Message(message)
 }

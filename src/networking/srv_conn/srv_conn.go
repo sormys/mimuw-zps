@@ -218,9 +218,8 @@ func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketCon
 		if err != nil {
 			return err
 		}
-		packageSent := packet_manager.PacketSendRequest{Addr: servAddr, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 
-		received := conn.SendRequest(packageSent)
+		received := conn.SendRequest(servAddr, message, networking.NewPolicyHandshake())
 		if received.Err != nil {
 			slog.Error("failed to send request", "err", received.Err)
 		}
