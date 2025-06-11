@@ -21,7 +21,7 @@ type packetConn struct {
 	requestChan <-chan networking.ReceivedMessageData
 }
 
-// Sends message message to addr and awaits a reply. Retrying on
+// Sends message to addr and awaits a reply. Retrying on
 // no reply is done according to retryPolicy. If the retry policy
 // does not return an error, the retries will continue after the specified time.
 // Otherwise method will wait for the specified time for the last time and no
