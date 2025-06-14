@@ -8,6 +8,10 @@ import (
 // This tree is most likely not complete, and is constructed by adding nodes
 // from received data. This means that we verify the integrity of the tree as
 // we build it.
+// Creating new merkle tree requires root hash. Each created node has no type
+// at the beginning. To set the type and verify the data use one of the Discover
+// methods. New nodes should be added only by using DiscoverAsDirectory
+// or DiscoverAsBig.
 type RemoteMerkleTree struct {
 	nodeMap  map[string]*RemoteNode
 	rootNode *RemoteNode
