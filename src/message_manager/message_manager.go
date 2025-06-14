@@ -214,3 +214,11 @@ func SetDownloadInfo(file handler.File) TuiMessage {
 		File:         file,
 	}
 }
+
+func TuiError(content string) TuiMessage {
+	return CreateTuiMessageInfo(ERROR_TUI, content)
+}
+
+func TuiInfo(content string) TuiMessage {
+	return CreateTuiMessageInfo(INFO_TUI, content)
+}

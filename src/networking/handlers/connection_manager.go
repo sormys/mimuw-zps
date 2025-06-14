@@ -13,7 +13,7 @@ import (
 	"net"
 )
 
-func sendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
+func SendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
 	conn.SendReply(addr, createErrorReply(err))
 }
 

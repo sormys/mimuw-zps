@@ -7,7 +7,7 @@ import (
 	"mimuw_zps/src/handler"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
-	"mimuw_zps/src/networking/connection_manager"
+	connection_manager "mimuw_zps/src/networking/handlers"
 	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
