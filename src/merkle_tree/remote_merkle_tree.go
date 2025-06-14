@@ -112,6 +112,9 @@ func (rmt *RemoteMerkleTree) GetNode(hash string) *RemoteNode {
 	return rmt.nodeMap[hash]
 }
 
+// Set the type of node with nodeHash as chunk and validate
+// if provided data is correct in merkle tree. If error occurs,
+// merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error {
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
@@ -134,10 +137,15 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 		}
 	}
 	node.nodeType = CHUNK
-	node.data = data
+	node.data = data // Set the type of node with nodeHash as directory and validate
+	// if provided data is correct in merkle tree. If error occurs,
+	// merkle tree is not modified.
 	return nil
 }
 
+// Set the type of node with nodeHash as directory and validate
+// if provided data is correct in merkle tree. If error occurs,
+// merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	nodeHash string,
 	children []DirectoryRecordRaw) error {
@@ -177,6 +185,9 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	return nil
 }
 
+// Set the type of node with nodeHash as big node and validate
+// if provided data is correct in merkle tree. If error occurs,
+// merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsBig(
 	nodeHash string,
 	childrenHashes [][]byte) error {
