@@ -8,17 +8,17 @@ import (
 // This tree is most likely not complete, and is constructed by adding nodes
 // from received data. This means that we verify the integrity of the tree as
 // we build it.
-type remoteMerkleTree struct {
-	nodeMap  map[string]*remoteNode
-	rootNode *remoteNode
+type RemoteMerkleTree struct {
+	nodeMap  map[string]*RemoteNode
+	rootNode *RemoteNode
 }
 
-type remoteNode struct {
+type RemoteNode struct {
 	nodeType          NodeType
 	name              string
 	hash              string
-	parent            *remoteNode
-	children          []*remoteNode
+	parent            *RemoteNode
+	children          []*RemoteNode
 	data              []byte
 	hasChunkChild     bool
 	hasDirectoryChild bool
@@ -26,35 +26,35 @@ type remoteNode struct {
 
 // ========================== remoteNode ==========================
 
-func (r remoteNode) Type() NodeType {
+func (r RemoteNode) Type() NodeType {
 	return r.nodeType
 }
 
-func (r remoteNode) Name() string {
+func (r RemoteNode) Name() string {
 	return r.name
 }
 
-func (r *remoteNode) SetName(s string) {
+func (r *RemoteNode) SetName(s string) {
 	r.name = s
 }
 
-func (r remoteNode) Hash() string {
+func (r RemoteNode) Hash() string {
 	return r.hash
 }
 
-func (r remoteNode) Parent() *remoteNode {
+func (r RemoteNode) Parent() *RemoteNode {
 	return r.parent
 }
 
-func (rd remoteNode) Children() []*remoteNode {
+func (rd RemoteNode) Children() []*RemoteNode {
 	return rd.children
 }
 
-func (rc remoteNode) Data() []byte {
+func (rc RemoteNode) Data() []byte {
 	return rc.data
 }
 
-func (rd *remoteNode) registerChildrenType(nodeType NodeType) error {
+func (rd *RemoteNode) registerChildrenType(nodeType NodeType) error {
 	if rd.Type() != BIG {
 		return nil
 	}
@@ -91,28 +91,28 @@ func (rd *remoteNode) registerChildrenType(nodeType NodeType) error {
 
 // ======================= remoteMerkleTree =======================
 
-func NewRemoteMerkleTree(hash string) remoteMerkleTree {
-	rootNode := &remoteNode{
+func NewRemoteMerkleTree(hash string) RemoteMerkleTree {
+	rootNode := &RemoteNode{
 		name:     "",
 		hash:     hash,
 		nodeType: NO_TYPE,
-		children: []*remoteNode{},
+		children: []*RemoteNode{},
 	}
-	return remoteMerkleTree{
+	return RemoteMerkleTree{
 		rootNode: rootNode,
-		nodeMap:  map[string]*remoteNode{hash: rootNode},
+		nodeMap:  map[string]*RemoteNode{hash: rootNode},
 	}
 }
 
-func (rmt *remoteMerkleTree) Root() *remoteNode {
+func (rmt *RemoteMerkleTree) Root() *RemoteNode {
 	return rmt.rootNode
 }
 
-func (rmt *remoteMerkleTree) GetNode(hash string) *remoteNode {
+func (rmt *RemoteMerkleTree) GetNode(hash string) *RemoteNode {
 	return rmt.nodeMap[hash]
 }
 
-func (rmt *remoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error {
+func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error {
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -138,7 +138,7 @@ func (rmt *remoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 	return nil
 }
 
-func (rmt *remoteMerkleTree) DiscoverAsDirectory(
+func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	nodeHash string,
 	children []DirectoryRecordRaw) error {
 	node, exist := rmt.nodeMap[nodeHash]
@@ -154,9 +154,9 @@ func (rmt *remoteMerkleTree) DiscoverAsDirectory(
 
 	hash := sha256.New()
 	for _, ch := range children {
-		hash.Write(ch.hash)
+		hash.Write(ch.Hash)
 	}
-	hashStr := convertHashToString(hash)
+	hashStr := ConvertHashToString(hash)
 	if hashStr != node.hash {
 		return errors.New("invalid children (hashes do not match)")
 	}
@@ -165,11 +165,11 @@ func (rmt *remoteMerkleTree) DiscoverAsDirectory(
 			return err
 		}
 	}
-	newChildren := make([]*remoteNode, len(children))
+	newChildren := make([]*RemoteNode, len(children))
 	for i, ch := range children {
-		hashStr := convertHashBytesToString(ch.hash)
-		newChildren[i] = &remoteNode{name: ch.name, parent: node,
-			hash: convertHashBytesToString(ch.hash), nodeType: NO_TYPE}
+		hashStr := ConvertHashBytesToString(ch.Hash)
+		newChildren[i] = &RemoteNode{name: ch.Name, parent: node,
+			hash: ConvertHashBytesToString(ch.Hash), nodeType: NO_TYPE}
 		rmt.nodeMap[hashStr] = newChildren[i]
 	}
 	node.children = newChildren
@@ -177,7 +177,7 @@ func (rmt *remoteMerkleTree) DiscoverAsDirectory(
 	return nil
 }
 
-func (rmt *remoteMerkleTree) DiscoverAsBig(
+func (rmt *RemoteMerkleTree) DiscoverAsBig(
 	nodeHash string,
 	childrenHashes [][]byte) error {
 	node, exist := rmt.nodeMap[nodeHash]
@@ -195,14 +195,14 @@ func (rmt *remoteMerkleTree) DiscoverAsBig(
 	for _, chHash := range childrenHashes {
 		hash.Write(chHash)
 	}
-	hashStr := convertHashToString(hash)
+	hashStr := ConvertHashToString(hash)
 	if hashStr != node.hash {
 		return errors.New("invalid children (hashes do not match)")
 	}
-	newChildren := make([]*remoteNode, len(childrenHashes))
+	newChildren := make([]*RemoteNode, len(childrenHashes))
 	for i, chHash := range childrenHashes {
-		strHash := convertHashBytesToString(chHash)
-		newChildren[i] = &remoteNode{hash: strHash,
+		strHash := ConvertHashBytesToString(chHash)
+		newChildren[i] = &RemoteNode{hash: strHash,
 			parent: node, nodeType: NO_TYPE}
 		rmt.nodeMap[strHash] = newChildren[i]
 	}

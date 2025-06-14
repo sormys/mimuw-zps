@@ -23,15 +23,19 @@ func hashData(childrenHash [][]byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func convertHashToString(hash hash.Hash) string {
+func ConvertHashToString(hash hash.Hash) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func convertHashBytesToString(hash []byte) string {
+func ConvertHashBytesToString(hash []byte) string {
 	return hex.EncodeToString(hash)
 }
 
+func ConvertStringHashToBytes(s string) ([]byte, error) {
+	return hex.DecodeString(s)
+}
+
 type DirectoryRecordRaw struct {
-	name string
-	hash []byte
+	Name string
+	Hash []byte
 }

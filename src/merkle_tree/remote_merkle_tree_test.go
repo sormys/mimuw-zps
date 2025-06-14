@@ -74,8 +74,8 @@ func TestEmptyDirectory(t *testing.T) {
 
 	tree := NewRemoteMerkleTree(directoryStr)
 	if err := tree.DiscoverAsDirectory(directoryStr, []DirectoryRecordRaw{
-		{name: name1,
-			hash: hash1Sha.Sum(nil)}}); err != nil {
+		{Name: name1,
+			Hash: hash1Sha.Sum(nil)}}); err != nil {
 		t.Errorf("Error while converting node to big %s", err)
 	}
 	if err := tree.DiscoverAsDirectory(hash1Str, []DirectoryRecordRaw{}); err == nil {
@@ -109,7 +109,7 @@ func TestConflictingNodeTypesInBig(t *testing.T) {
 		t.Errorf("Error while converting node to chunk %s", err)
 	}
 	if err := tree.DiscoverAsDirectory(DirStr, []DirectoryRecordRaw{{
-		name: dirChunkName, hash: DirChunkSha.Sum(nil)}}); err == nil {
+		Name: dirChunkName, Hash: DirChunkSha.Sum(nil)}}); err == nil {
 		t.Errorf("No error when there are conflicting type in big node")
 	}
 }
