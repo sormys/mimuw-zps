@@ -7,28 +7,17 @@ import (
 
 type RequestTuiType = string
 
-type Download struct {
-	Peer peer_conn.Peer
-	Hash handler.Hash
-}
-
-var (
-	INFO           = RequestTuiType("connect")
-	RELOAD_CONTENT = RequestTuiType("reload_content")
-	RELOAD_PEERS   = RequestTuiType("reload_peers")
-	DOWNLOAD       = RequestTuiType("download")
-	PEERS          = RequestTuiType("peers")
-	CONNECT        = RequestTuiType("connect")
-	SHOW_DATA      = RequestTuiType("show_data")
-)
-
 const (
-	INFO_TUI      = RequestTuiType("INFO_TUI")
-	ERROR_TUI     = RequestTuiType("ERROR_TUI")
-	PEERS_TUI     = RequestTuiType("PEERS_TUI")
-	FOLDER_TUI    = RequestTuiType("FOLDER_TUI")
-	FILE_TUI      = RequestTuiType("FILE_TUI")
-	EXPAND_FOLDER = RequestTuiType("EXPAND_FOLDER")
+	INFO_TUI       = RequestTuiType("INFO_TUI")
+	ERROR_TUI      = RequestTuiType("ERROR_TUI")
+	PEERS_TUI      = RequestTuiType("PEERS_TUI")
+	FOLDER_TUI     = RequestTuiType("FOLDER_TUI")
+	FILE_TUI       = RequestTuiType("FILE_TUI")
+	EXPAND_FOLDER  = RequestTuiType("EXPAND_FOLDER")
+	CONNECT        = RequestTuiType("CONNECT")
+	SHOW_DATA      = RequestTuiType("SHOW_DATA")
+	DOWNLOAD       = RequestTuiType("DOWNLOAD")
+	RELOAD_CONTENT = RequestTuiType("RELOAD_CONTENT")
 )
 
 type TUIFolder struct {
