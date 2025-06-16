@@ -10,6 +10,7 @@ import (
 	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
+	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
 	"sync"
 )
@@ -65,106 +66,77 @@ func DownloadFileFromPeer(conn packet_manager.PacketConn, message mm.TuiMessageB
 	return mm.TuiInfo("Successfully downloaded data from " + fileInfo.Peer.Name + "")
 }
 
-type DiscoveredType struct {
-	hash     string
-	nodeType mt.NodeType
-	data     []byte
-	children []mt.DirectoryRecordRaw
-	err      error
+type discoveredType struct {
+	hash      string
+	cacheType mt.NodeType
+	msg       pmp.DatumMsg
+	err       error
 }
 
-func getNameFromBytes(nameBytes [32]byte) (string, error) {
-	var i int
-	for i = 31; i >= 0; i-- {
-		if nameBytes[i] != 0x0 {
-			break
+func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData) discoveredType {
+	responseMessage, err := pmp.DecodeMessage(response)
+	if err != nil {
+		return discoveredType{hash: reqHash, err: err}
+	}
+	switch msg := responseMessage.(type) {
+	case pmp.NoDatumMsg:
+		return discoveredType{hash: reqHash, err: errors.New("no data for given hash")}
+	case pmp.DatumMsg:
+		if mt.ConvertHashBytesToString(msg.Hash[:]) != reqHash {
+			return discoveredType{hash: reqHash, err: errors.New("received hash do not match")}
 		}
+		return discoveredType{hash: reqHash, msg: msg, err: nil}
+	case pmp.ErrorMsg:
+		return discoveredType{hash: reqHash, err: errors.New("received error response from peer: " + msg.Message)}
 	}
-	if i == 0 {
-		return "", errors.New("invalid name of file/directory")
-	}
-	return string(nameBytes[:min(i, 31)]), nil
-}
-
-func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData) DiscoveredType {
-	messType, exists := networking.TypeMap[utility.GetMessageType(response.Raw)]
-	if !exists {
-		return DiscoveredType{err: errors.New("invalid response type")}
-	}
-	switch messType {
-	case networking.NO_DATUM:
-		return DiscoveredType{hash: nodeHash, err: errors.New("peer has no node with given hash")}
-	case networking.DATUM:
-		if response.Length < 1 {
-			return DiscoveredType{err: errors.New("datum response has no type")}
-		}
-		switch response.Data[0] {
-		case 0x0:
-			// CHUNK
-			if response.Length > 1024+1 {
-				return DiscoveredType{err: errors.New("chunk data too big")}
-			}
-			return DiscoveredType{hash: nodeHash, nodeType: mt.CHUNK, data: response.Data[1:]}
-		case 0x01:
-			// DIRECTORY
-			if (response.Length-1)%64 != 0 || (response.Length-1)/64 > 16 {
-				return DiscoveredType{err: errors.New("directory entires are of incorrect length")}
-			}
-			records := make([]mt.DirectoryRecordRaw, (response.Length-1)/64)
-			recordStart := 1
-			for i := range len(records) {
-				n, err := getNameFromBytes([32]byte(response.Data[recordStart : recordStart+32]))
-				if err != nil {
-					return DiscoveredType{err: err}
-				}
-				h := response.Data[recordStart+32 : recordStart+64]
-				records[i] = mt.DirectoryRecordRaw{Name: n, Hash: h}
-				recordStart += 64
-			}
-			return DiscoveredType{hash: nodeHash, nodeType: mt.DIRECTORY, children: records}
-		case 0x03:
-			// BIG
-			childrenLen := (response.Length - 1) / 32
-			if (response.Length-1)%32 != 0 || childrenLen > 32 || childrenLen < 2 {
-				return DiscoveredType{err: errors.New("big node children are of incorrect length")}
-			}
-			children := make([]mt.DirectoryRecordRaw, childrenLen)
-			recordStart := 1
-			for i := range childrenLen {
-				children[i] = mt.DirectoryRecordRaw{Hash: response.Data[recordStart : recordStart+32]}
-				recordStart += 32
-			}
-			return DiscoveredType{hash: nodeHash, nodeType: mt.BIG, children: children}
-		}
-	}
-	return DiscoveredType{err: errors.New("unknown datum type")}
+	return discoveredType{hash: reqHash, err: errors.New("received unexpected reply from host")}
 }
 
 func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeHash string,
-	tree mt.RemoteMerkleTree, dscvChan chan<- DiscoveredType) {
+	tree mt.RemoteMerkleTree, dscvChan chan<- discoveredType) {
 	hashBytes, err := mt.ConvertStringHashToBytes(nodeHash)
 	if err != nil {
-		dscvChan <- DiscoveredType{err: errors.New("invalid hash")}
+		dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid hash")}
 		return
 	}
 	for {
-		request := createDatumRequestTemplate(utility.GenerateID(), DATUM_REQUEST, mm.Hash(hashBytes))
+		// Check if we have it already in the tree
+		// node, exists := tree.GetNode(nodeHash)
+		// if exists {
+		// 	switch node.Type() {
+		// 	case mt.BIG:
+		// 		bigNode := node.(mt.RemoteBigNode)
+		// 		if bigNode.HasDirectories || bigNode.HasChunks {
+		// 			dscvChan <- discoveredType{hash: nodeHash, cacheType: node.Type()}
+		// 			return
+		// 		}
+		// 	case mt.DIRECTORY, mt.CHUNK:
+		// 		dscvChan <- discoveredType{hash: nodeHash, cacheType: node.Type()}
+		// 	}
+		// }
+
+		request := pmp.DatumRequestMsg{
+			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(peer.Addresses[0], utility.GenerateID()),
+			Hash:            mm.Hash(hashBytes),
+		}
 		// FIXME(sormys) send to all addresses, check
-		data := conn.SendRequest(peer.Addresses[0], request, networking.NewRetryPolicyRequest())
+		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
+			networking.NewRetryPolicyRequest())
 		if data.Err != nil {
-			dscvChan <- DiscoveredType{err: data.Err}
+			dscvChan <- discoveredType{hash: nodeHash, err: data.Err}
 			return
 		}
 		dscvType := decodeDatumResponse(nodeHash, data)
-		if dscvType.nodeType != mt.BIG {
+		if dscvType.err != nil || dscvType.msg.NodeType != mt.BIG {
+			// The type has been discovered or error occured
 			dscvChan <- dscvType
 			return
 		}
-		childrenHashes := make([][]byte, len(dscvType.children))
-		for i, ch := range dscvType.children {
+		childrenHashes := make([][]byte, len(dscvType.msg.Children))
+		for i, ch := range dscvType.msg.children {
 			childrenHashes[i] = ch.Hash
 		}
-		// This is modifies only one node, does not modify parent
+		// If there would be no children this would fail
 		err = tree.DiscoverAsBig(nodeHash, childrenHashes)
 		if err != nil {
 			dscvChan <- dscvType
@@ -191,7 +163,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 	}
 	// FIXME(sormys) this should probably be an option in packet manager, for now,
 	// ignoring issue of creating multiple coroutines here
-	responseChan := make(chan DiscoveredType, len(node.Children()))
+	responseChan := make(chan discoveredType, len(node.Children()))
 	for _, ch := range node.Children() {
 		go discoverNodeType(conn, message.FileInfo.Peer, ch.Hash(), tree, responseChan)
 	}
@@ -200,14 +172,14 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 		if dscvType.err != nil {
 			return mm.TuiError(dscvType.err.Error())
 		}
-		if dscvType.nodeType == mt.DIRECTORY {
-			err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.children)
+		if dscvType.msg.NodeType == mt.DIRECTORY {
+			err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children)
 			if err != nil {
 				return mm.TuiError(dscvType.err.Error())
 			}
 		}
-		if dscvType.nodeType == mt.CHUNK {
-			err := tree.DiscoverAsChunk(dscvType.hash, dscvType.data)
+		if dscvType.msg.NodeType == mt.CHUNK {
+			err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data)
 			if err != nil {
 				return mm.TuiError(dscvType.err.Error())
 			}

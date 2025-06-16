@@ -6,7 +6,23 @@ import (
 	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
+	"net"
 )
+
+func NewEmptyBaseMassage(addr net.Addr, id utility.ID) BaseMessage {
+	return BaseMessage{
+		addr: addr,
+		id:   id,
+	}
+}
+
+func NewEmtpyUnsignedMessage(addr net.Addr, id utility.ID) UnsignedMessage {
+	return UnsignedMessage{NewEmptyBaseMassage(addr, id)}
+}
+
+func NewEmptySignedMessage(addr net.Addr, id utility.ID) SignedMessage {
+	return SignedMessage{BaseMessage: NewEmptyBaseMassage(addr, id), Signature: encryption.Key{}}
+}
 
 // EncodeMessage converts a peerMessage to raw bytes for transmission
 // PeerMessage length parameter can be of any value as it will be calculated
@@ -35,15 +51,6 @@ func EncodeMessage(msg PeerMessage) []byte {
 		return encodeNoDatumMsg(m)
 	default:
 		return nil
-	}
-}
-
-func SignMessage(msg BaseMessage) SignedMessage {
-	signature := encryption.GetSignature(msg.Raw())
-
-	return SignedMessage{
-		BaseMessage: msg,
-		Signature:   signature,
 	}
 }
 
@@ -84,32 +91,34 @@ func encodeErrorMsg(msg ErrorMsg) []byte {
 
 // ===========================HelloMsg==============================
 
-func encodeHandshake(id utility.ID, msgType networking.MessageType, extensions Extensions, name string, signature encryption.Key) []byte {
+func encodeHandshake(id utility.ID, msgType networking.MessageType, extensions Extensions, name string) []byte {
 	nameBytes := []byte(name)
 	length := uint16(EXTENSIONS_LEN + len(nameBytes))
 
 	result := createBaseMessage(id, msgType, length)
 	result = append(result, extensions[:]...)
 	result = append(result, nameBytes...)
+	signature := encryption.GetSignature(result)
 	result = append(result, signature[:]...)
 	return result
 }
 
 func encodeHelloMsg(msg HelloMsg) []byte {
-	return encodeHandshake(msg.ID(), networking.HELLO, msg.Extensions, msg.Name, msg.Signature)
+	return encodeHandshake(msg.ID(), networking.HELLO, msg.Extensions, msg.Name)
 }
 
 // ========================HelloReplyMsg============================
 
 func encodeHelloReplyMsg(msg HelloReplyMsg) []byte {
-	return encodeHandshake(msg.ID(), networking.HELLO_REPLY, msg.Extensions, msg.Name, msg.Signature)
+	return encodeHandshake(msg.ID(), networking.HELLO_REPLY, msg.Extensions, msg.Name)
 }
 
 // ========================RootRequestMsg===========================
 
 func encodeRootRequestMsg(msg RootRequestMsg) []byte {
 	result := createBaseMessage(msg.ID(), networking.ROOT_REQUEST, 0)
-	result = append(result, msg.Signature[:]...)
+	signature := encryption.GetSignature(result)
+	result = append(result, signature[:]...)
 	return result
 }
 
@@ -120,7 +129,8 @@ func encodeRootReplyMsg(msg RootReplyMsg) []byte {
 
 	result := createBaseMessage(msg.ID(), networking.ROOT_REPLY, length)
 	result = append(result, msg.Hash[:]...)
-	result = append(result, msg.Signature[:]...)
+	signature := encryption.GetSignature(result)
+	result = append(result, signature[:]...)
 	return result
 }
 
@@ -179,6 +189,7 @@ func encodeNoDatumMsg(msg NoDatumMsg) []byte {
 
 	result := createBaseMessage(msg.ID(), networking.NO_DATUM, length)
 	result = append(result, msg.Hash[:]...)
-	result = append(result, msg.Signature[:]...)
+	signature := encryption.GetSignature(result)
+	result = append(result, signature[:]...)
 	return result
 }
