@@ -17,6 +17,7 @@ const (
 	HELLO         MessageType = "Hello"
 	ROOT_REQUEST  MessageType = "RootRequest"
 	DATUM_REQUEST MessageType = "DatumRequest"
+	PONG          MessageType = "Pong"
 	ERROR         MessageType = "Error"
 	HELLO_REPLY   MessageType = "HelloReply"
 	ROOT_REPLY    MessageType = "RootReply"
@@ -35,17 +36,28 @@ func IsRequest(messageType MessageType) bool {
 	return isRequest
 }
 
+func swapMap[K comparable, V comparable](original map[K]V) map[V]K {
+	swapped := make(map[V]K, len(original))
+	for key, value := range original {
+		swapped[value] = key
+	}
+	return swapped
+}
+
 var TypeMap = map[uint8]MessageType{
 	0x00: PING,
 	0x01: HELLO,
 	0x02: ROOT_REQUEST,
 	0x03: DATUM_REQUEST,
+	0x80: PONG,
 	0x81: ERROR,
 	0x82: HELLO_REPLY,
 	0x83: ROOT_REPLY,
 	0x84: DATUM,
 	0x85: NO_DATUM,
 }
+
+var ByteTypeMap = swapMap(TypeMap)
 
 type ReceivedMessageData struct {
 	Addr     net.Addr
