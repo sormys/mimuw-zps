@@ -15,13 +15,13 @@ import (
 )
 
 func sendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
-	conn.SendRequest(createErrorReply(addr, err))
+	conn.SendReply(addr, createErrorReply(err))
 }
 func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash handler.Hash) (networking.ReceivedMessageData, message_manager.TuiMessage) {
 	id := utility.GenerateID()
 	for _, address := range addr {
-		outgoingMessage := createDatumRequest(address, hash)
-		receivedData := conn.SendRequest(outgoingMessage)
+		message := createDatumRequestTemplate(id, DATUM_REQUEST, hash)
+		receivedData := conn.SendRequest(address, message, networking.NewRetryPolicyRequest())
 
 		if receivedData.MessType != networking.NO_DATUM {
 			return networking.ReceivedMessageData{},
@@ -40,8 +40,8 @@ func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash hand
 func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networking.ReceivedMessageData, message_manager.TuiMessage) {
 	id := utility.GenerateID()
 	for _, address := range addr {
-		outgoingMessage := createRootRequest(address, id)
-		receivedData := conn.SendRequest(outgoingMessage)
+		message := createDatumRequestTemplate(id, ROOT_REQUEST, handler.Hash{})
+		receivedData := conn.SendRequest(address, message, networking.NewRetryPolicyRequest())
 		if verifyIdAndType(receivedData, id, networking.ROOT_REQUEST) {
 			return receivedData, message_manager.CreateEmptyMessageInfo()
 		}
@@ -56,8 +56,8 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 	addresses := peer.Addresses
 	for _, addr := range addresses {
 		id := utility.GenerateID()
-		message := CreateHandshake(addr, id, nickname)
-		info := conn.SendRequest(message)
+		message := srv_conn.CreateHandshakeBytes(HELLO, nickname, id)
+		info := conn.SendRequest(addr, message, networking.NewPolicyHandshake())
 		if verifyIdAndType(info, id, networking.HELLO_REPLY) &&
 			encryption.VerifySignature(info.Raw[:networking.MIN_HELLO_SIZE+info.Length], getSignatureFromReceivedHandshake(info), encryption.ParsePublicKey(peer.Key)) {
 			return message_manager.CreateTuiMessageInfo(message_manager.INFO_TUI, "Successfully connected to address "+addr.String())
@@ -85,7 +85,8 @@ func SendHelloReply(conn packet_manager.PacketConn, data networking.ReceivedMess
 	}
 
 	slog.Debug("Received correct Hello, sending reply")
-	conn.SendReply(createHandshakeReply(data.Addr, data.ID, nickname))
+	message := srv_conn.CreateHandshakeBytes(HELLO_REPLY, nickname, data.ID)
+	conn.SendReply(data.Addr, message)
 	return nil
 }
 

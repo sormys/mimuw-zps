@@ -23,7 +23,9 @@ func SenderWorker(conn net.PacketConn,
 			}
 			continue
 		}
-		waiterChan <- request
+		if request.MessRetryPolicy != nil {
+			waiterChan <- request
+		}
 	}
 }
 

@@ -174,3 +174,34 @@ func TestSenderAwaitsMessages(t *testing.T) {
 	}
 	mockUDPConn.AssertExpectations(t)
 }
+
+func TestSenderSendsOnceWhenNoRetryPolicy(t *testing.T) {
+	// mesage data
+	recvAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
+	messType := networking.HELLO
+	data := []byte{0x00, 0x00, 0x00, 0x00}                 // extensions
+	data = append(data, []byte("TestName")...)             // name
+	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
+	id := utility.GenerateID()
+	msg := createMessage(messType, data, len(data), id)
+	// send request
+	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
+		MessRetryPolicy: nil, CallbackChan: nil}
+
+	// Mock objects
+	reqChannel := make(chan networking.SendRequest)
+	waiterChannel := make(chan networking.SendRequest)
+	mockUDPConn := new(mockSendUDPConn)
+	mockUDPConn.On("WriteTo", mock.Anything, recvAddr).Return(
+		[]byte(sendReq.Message), len(sendReq.Message), nil).Once()
+
+	go SenderWorker(mockUDPConn, reqChannel, waiterChannel)
+	reqChannel <- sendReq
+
+	select {
+	case <-waiterChannel:
+		t.Error("Received retry request when request has no retry policy")
+	case <-time.After(time.Second):
+	}
+	mockUDPConn.AssertExpectations(t)
+}

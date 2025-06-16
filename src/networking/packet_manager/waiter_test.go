@@ -182,3 +182,115 @@ func TestWaiterReplyPolicyErr(t *testing.T) {
 		t.Errorf("No reply has been received in callback.")
 	}
 }
+
+func TestWaiterAwaitesAfterErr(t *testing.T) {
+	// mesage data
+	recvAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
+	messType := networking.HELLO
+	data := []byte{0x00, 0x00, 0x00, 0x00}                 // extensions
+	data = append(data, []byte("TestName")...)             // name
+	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
+	id := utility.GenerateID()
+	msg := createMessage(messType, data, len(data), id)
+	// send request
+	retryPolicyFnLong := func() (time.Duration, error) { return time.Second, errors.New("test no retry") }
+	callbackChan := make(chan networking.ReceivedMessageData, 1)
+	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
+		MessRetryPolicy: RetryPolicyMock{retryPolicyFnLong}, CallbackChan: callbackChan}
+	// reply data
+	reply := networking.ReceivedMessageData{
+		Addr:     recvAddr,
+		ID:       id,
+		MessType: networking.HELLO_REPLY,
+		Length:   uint16(len(data)),
+		Data:     data,
+		Err:      nil,
+	}
+	// channels
+	bufSize := 10
+	senderChan := make(chan networking.SendRequest, bufSize)
+	retryReqChan := make(chan networking.SendRequest, bufSize)
+	receiverChannel := make(chan networking.ReceivedMessageData, bufSize)
+
+	go WaiterWorker(senderChan, retryReqChan, receiverChannel)
+	retryReqChan <- sendReq
+	receiverChannel <- reply
+
+	select {
+	case cbData := <-callbackChan:
+		assertCorrectMessage(t, cbData, reply.MessType, reply.Data, int(reply.Length), reply.ID, reply.Addr)
+	case <-time.After(time.Second):
+		t.Errorf("No reply has been received in callback.")
+	}
+}
+
+func TestWaiterHandleEarlyReply(t *testing.T) {
+	// mesage data
+	recvAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
+	messType := networking.HELLO
+	data := []byte{0x00, 0x00, 0x00, 0x00}                 // extensions
+	data = append(data, []byte("TestName")...)             // name
+	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
+	id := utility.GenerateID()
+	msg := createMessage(messType, data, len(data), id)
+	// send request
+	retryPolicyFnLong := func() (time.Duration, error) { return time.Second, errors.New("test no retry") }
+	callbackChan := make(chan networking.ReceivedMessageData, 1)
+	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
+		MessRetryPolicy: RetryPolicyMock{retryPolicyFnLong}, CallbackChan: callbackChan}
+	// reply data
+	reply := networking.ReceivedMessageData{
+		Addr:     recvAddr,
+		ID:       id,
+		MessType: networking.HELLO_REPLY,
+		Length:   uint16(len(data)),
+		Data:     data,
+		Err:      nil,
+	}
+	// channels
+	bufSize := 10
+	senderChan := make(chan networking.SendRequest, bufSize)
+	retryReqChan := make(chan networking.SendRequest, bufSize)
+	receiverChannel := make(chan networking.ReceivedMessageData, bufSize)
+
+	go WaiterWorker(senderChan, retryReqChan, receiverChannel)
+	// Reply comes before the request
+	receiverChannel <- reply
+	retryReqChan <- sendReq
+
+	select {
+	case cbData := <-callbackChan:
+		assertCorrectMessage(t, cbData, reply.MessType, reply.Data, int(reply.Length), reply.ID, reply.Addr)
+	case <-time.After(time.Second):
+		t.Errorf("No reply has been received in callback.")
+	}
+}
+
+func TestWaiterIgnoresEmptyRetry(t *testing.T) {
+	// mesage data
+	recvAddr := &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 2137}
+	messType := networking.HELLO
+	data := []byte{0x00, 0x00, 0x00, 0x00}                 // extensions
+	data = append(data, []byte("TestName")...)             // name
+	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
+	id := utility.GenerateID()
+	msg := createMessage(messType, data, len(data), id)
+	// send request
+	sendReq := networking.SendRequest{Addr: recvAddr, Message: msg,
+		MessRetryPolicy: nil, CallbackChan: nil}
+	// channels
+	bufSize := 10
+	senderChan := make(chan networking.SendRequest, bufSize)
+	retryReqChan := make(chan networking.SendRequest, bufSize)
+	receiverChannel := make(chan networking.ReceivedMessageData, bufSize)
+
+	go WaiterWorker(senderChan, retryReqChan, receiverChannel)
+	// Reply comes before the request
+	retryReqChan <- sendReq
+
+	select {
+	case <-senderChan:
+		t.Errorf("Nothing should be sent, as there is no retry policy")
+	case <-time.After(time.Millisecond * 200):
+	}
+}
