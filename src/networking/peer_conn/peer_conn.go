@@ -15,9 +15,9 @@ const USER_NAME = "NICPON"
 type stage = string
 
 const (
-	NOT_CONNECT stage = "not connect"
-	CONNECT     stage = "connect"
-	PENDING     stage = "pending"
+	NOT_CONNECTED stage = "not connected"
+	CONNECT       stage = "connect"
+	PENDING       stage = "pending"
 )
 
 var userMap = map[string]Peer{}

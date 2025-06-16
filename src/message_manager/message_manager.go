@@ -8,16 +8,16 @@ import (
 type RequestTuiType = string
 
 const (
-	INFO_TUI       = RequestTuiType("INFO_TUI")
-	ERROR_TUI      = RequestTuiType("ERROR_TUI")
-	PEERS_TUI      = RequestTuiType("PEERS_TUI")
-	FOLDER_TUI     = RequestTuiType("FOLDER_TUI")
-	FILE_TUI       = RequestTuiType("FILE_TUI")
-	EXPAND_FOLDER  = RequestTuiType("EXPAND_FOLDER")
-	CONNECT        = RequestTuiType("CONNECT")
-	SHOW_DATA      = RequestTuiType("SHOW_DATA")
-	DOWNLOAD       = RequestTuiType("DOWNLOAD")
-	RELOAD_CONTENT = RequestTuiType("RELOAD_CONTENT")
+	INFO_TUI       RequestTuiType = "INFO_TUI"
+	ERROR_TUI      RequestTuiType = "ERROR_TUI"
+	PEERS_TUI      RequestTuiType = "PEERS_TUI"
+	FOLDER_TUI     RequestTuiType = "FOLDER_TUI"
+	FILE_TUI       RequestTuiType = "FILE_TUI"
+	EXPAND_FOLDER  RequestTuiType = "EXPAND_FOLDER"
+	CONNECT        RequestTuiType = "CONNECT"
+	SHOW_DATA      RequestTuiType = "SHOW_DATA"
+	DOWNLOAD       RequestTuiType = "DOWNLOAD"
+	RELOAD_CONTENT RequestTuiType = "RELOAD_CONTENT"
 )
 
 type TUIFolder struct {

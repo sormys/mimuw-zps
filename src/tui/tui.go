@@ -17,9 +17,9 @@ import (
 type state string
 
 const (
-	CHOOSE_USER = state("user")
-	USER_INFO   = state("info")
-	FOLDER      = state("folder")
+	CHOOSE_USER state = "user"
+	USER_INFO   state = "info"
+	FOLDER      state = "folder"
 )
 
 type model struct {
@@ -48,14 +48,13 @@ type VisibleItem struct {
 
 // Marks a user as connected. We dont have a lots of users that's why
 // linear complexity is acceptable
-func updateUserState(users []peer_conn.Peer, user peer_conn.Peer) []peer_conn.Peer {
-	for i, u := range users {
+func (m *model) updateUserState(user peer_conn.Peer) {
+	for i, u := range m.users {
 		if u.Name == user.Name {
-			users[i].Stage = message_manager.CONNECT
+			m.users[i].Stage = peer_conn.CONNECT
 			break
 		}
 	}
-	return users
 }
 
 func showMyLevel(folder message_manager.TUIFolder, depth int, tmp *[]VisibleItem) {
@@ -184,7 +183,7 @@ func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
 
 	case message_manager.CONNECT:
 		peer := (message.Payload().([]peer_conn.Peer)[0])
-		m.users = updateUserState(m.users, peer)
+		m.updateUserState(peer)
 		m.selectedUser.Stage = peer_conn.CONNECT
 		m.infoOutside = "Successful connected with " + peer.Name
 
@@ -274,6 +273,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			switch m.state {
+
 			case CHOOSE_USER:
 				m.selectedUser = m.users[m.cursor]
 				m.state = USER_INFO
@@ -339,7 +339,15 @@ func (m *model) View() string {
 	}
 
 	s += "\nPress [r] to resfresh context"
-	s += "\nPress [q] to quit\n"
+	if m.state == FOLDER {
+		s += "\nPress [q] to return to the peer information screen\n"
+	}
+	if m.state == USER_INFO {
+		s += "\nPress [q] to return to the list of peers\n"
+	}
+	if m.state == CHOOSE_USER {
+		s += "\nPress [q] to quit\n"
+	}
 
 	if m.infoOutside != "" {
 		s += "\n" + "INFO: " + m.infoOutside + "\n"

@@ -159,7 +159,6 @@ func handleUserCommand(conn packet_manager.PacketConn,
 
 			}
 			if data != nil && !message_manager.IsEmpty(data) {
-				// slog.Debug("Trying to send", "message", data)
 				tuiSender <- data
 			}
 		}(message)

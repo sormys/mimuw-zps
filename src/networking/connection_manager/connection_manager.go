@@ -17,6 +17,7 @@ import (
 func sendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
 	conn.SendReply(addr, createErrorReply(err))
 }
+
 func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash handler.Hash) (networking.ReceivedMessageData, message_manager.TuiMessage) {
 	id := utility.GenerateID()
 	for _, address := range addr {
