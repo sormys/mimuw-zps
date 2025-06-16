@@ -34,6 +34,15 @@ func (r RemoteNode) Type() NodeType {
 	return r.nodeType
 }
 
+// Represents type represented in file system - Big node can represent part of dir of file
+func (r RemoteNode) IsDir() bool {
+	return r.Type() == DIRECTORY || r.hasDirectoryChild
+}
+
+func (r RemoteNode) IsFile() bool {
+	return r.Type() == CHUNK || r.hasChunkChild
+}
+
 func (r RemoteNode) Name() string {
 	return r.name
 }

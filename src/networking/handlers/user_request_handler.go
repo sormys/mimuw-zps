@@ -100,26 +100,34 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 		return
 	}
 	for {
-		// Check if we have it already in the tree
-		// node, exists := tree.GetNode(nodeHash)
-		// if exists {
-		// 	switch node.Type() {
-		// 	case mt.BIG:
-		// 		bigNode := node.(mt.RemoteBigNode)
-		// 		if bigNode.HasDirectories || bigNode.HasChunks {
-		// 			dscvChan <- discoveredType{hash: nodeHash, cacheType: node.Type()}
-		// 			return
-		// 		}
-		// 	case mt.DIRECTORY, mt.CHUNK:
-		// 		dscvChan <- discoveredType{hash: nodeHash, cacheType: node.Type()}
-		// 	}
-		// }
+		// Check if we have it already in the tree - cache
+		if node := tree.GetNode(nodeHash); node != nil {
+			if node.IsDir() {
+				dscvChan <- discoveredType{hash: nodeHash, cacheType: mt.DIRECTORY}
+				return
+			} else if node.IsFile() {
+				dscvChan <- discoveredType{hash: nodeHash, cacheType: mt.CHUNK}
+				return
+			}
+			if len(node.Children()) == 0 {
+				dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid data in tree")}
+				return
+			}
+			nodeHash = node.Children()[0].Hash()
+			hashBytes, err = mt.ConvertStringHashToBytes(nodeHash)
+			if err != nil {
+				dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid hash in tree")}
+				return
+			}
+			continue
+		}
 
+		// No such node in memory - ask peer
 		request := pmp.DatumRequestMsg{
 			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(peer.Addresses[0], utility.GenerateID()),
 			Hash:            mm.Hash(hashBytes),
 		}
-		// FIXME(sormys) send to all addresses, check
+		// FIXME(sormys) send to all addresses, check if any address available
 		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
 			networking.NewRetryPolicyRequest())
 		if data.Err != nil {
@@ -133,7 +141,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 			return
 		}
 		childrenHashes := make([][]byte, len(dscvType.msg.Children))
-		for i, ch := range dscvType.msg.children {
+		for i, ch := range dscvType.msg.Children {
 			childrenHashes[i] = ch.Hash
 		}
 		// If there would be no children this would fail
@@ -172,6 +180,9 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 		if dscvType.err != nil {
 			return mm.TuiError(dscvType.err.Error())
 		}
+		if dscvType.cacheType == mt.DIRECTORY || dscvType.cacheType == mt.CHUNK {
+			break
+		}
 		if dscvType.msg.NodeType == mt.DIRECTORY {
 			err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children)
 			if err != nil {
@@ -185,7 +196,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 			}
 		}
 	}
-	// TODO(sormys) send the info using standard inteface
+	// TODO(sormys) Gather types and send the info using standard inteface
 	return mm.TuiInfo("Correctly discovered the type")
 }
 
