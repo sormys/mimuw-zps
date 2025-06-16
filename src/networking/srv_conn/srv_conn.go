@@ -22,6 +22,8 @@ const ADDRESS_ENDPOINT = "addresses"
 const KEY_ENDPOINT = "key"
 const GALENE = "galene.org"
 
+var nick string
+
 // Struct used for connection to central server under provided url
 type Server struct {
 	url string
@@ -159,7 +161,7 @@ func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
 	return splitLines(body), nil
 }
 
-// Get all required info about active Peers
+// Get all required info about active Peers without me
 func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
 	var peers []peer_conn.Peer
 	var errors []error
@@ -184,6 +186,9 @@ func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
 			errors = append(errors, err)
 			continue
 		}
+		if nick == nicknames[i] {
+			continue
+		}
 		peers = append(peers, peer_conn.NewPeer(nicknames[i], addresses, key))
 	}
 	return peers, errors
@@ -192,6 +197,7 @@ func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
 // Registers the user's key with the server and performs the initial handshake.
 // Return nil if successful; otherwise, returns and error
 func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketConn) error {
+	nick = nickname
 	key, err := encryption.GetMyPublicKeyBytes()
 	if err != nil {
 		return err
@@ -219,7 +225,7 @@ func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketCon
 			return err
 		}
 
-		received := conn.SendRequest(servAddr, message, networking.NewPolicyHandshake())
+		received := conn.SendRequest(servAddr, message, networking.NewRetryPolicyAwaitOnce())
 		if received.Err != nil {
 			slog.Error("failed to send request", "err", received.Err)
 		}

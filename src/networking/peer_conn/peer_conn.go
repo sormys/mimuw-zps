@@ -11,13 +11,20 @@ import (
 
 const USER_NAME = "NICPON"
 
-var userMap = map[string]Peer{}
+type stage = string
+
+const (
+	NOT_CONNECTED stage = "not connected"
+	CONNECT       stage = "connect"
+	PENDING       stage = "pending"
+)
 
 // Stage can me ENUM, for example: in the middle of the handshake, or post-handshake
 type Peer struct {
 	Addresses []net.Addr
 	Name      string
 	Key       encryption.Key
+	Stage     stage
 }
 
 type HandshakeType struct {

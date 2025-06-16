@@ -3,8 +3,8 @@ package peer_message_parser
 import (
 	"crypto/ecdsa"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/merkle_tree"
-	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
 	"net"
@@ -141,7 +141,7 @@ func (rr RootRequestMsg) Type() networking.MessageType {
 
 type RootReplyMsg struct {
 	SignedMessage
-	Hash message_manager.Hash
+	Hash handler.Hash
 }
 
 func (rr RootReplyMsg) Type() networking.MessageType {
@@ -152,7 +152,7 @@ func (rr RootReplyMsg) Type() networking.MessageType {
 
 type DatumRequestMsg struct {
 	UnsignedMessage
-	Hash message_manager.Hash
+	Hash handler.Hash
 }
 
 func (dr DatumRequestMsg) Type() networking.MessageType {
@@ -172,7 +172,7 @@ const BIG_MIN_ENTRY_SIZE = 2
 // Data is only available if node type is chunk, children available otherwise
 type DatumMsg struct {
 	UnsignedMessage
-	Hash     message_manager.Hash
+	Hash     handler.Hash
 	NodeType merkle_tree.NodeType
 	Data     []byte
 	Children []merkle_tree.DirectoryRecordRaw
@@ -186,7 +186,7 @@ func (dr DatumMsg) Type() networking.MessageType {
 
 type NoDatumMsg struct {
 	SignedMessage
-	Hash message_manager.Hash
+	Hash handler.Hash
 }
 
 func (dr NoDatumMsg) Type() networking.MessageType {

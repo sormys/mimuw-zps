@@ -3,8 +3,8 @@ package peer_message_parser
 import (
 	"errors"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/merkle_tree"
-	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"unicode/utf8"
 )
@@ -196,7 +196,7 @@ func decodeRootReplyMsg(msg networking.ReceivedMessageData) (RootReplyMsg, error
 	if err := basicValidation(msg); err != nil {
 		return RootReplyMsg{}, err
 	}
-	if msg.Length < message_manager.HASH_LENGTH {
+	if msg.Length < handler.HASH_LENGTH {
 		return RootReplyMsg{}, decoderError("invalid root hash")
 	}
 	signature, err := getSignature(msg)
@@ -205,7 +205,7 @@ func decodeRootReplyMsg(msg networking.ReceivedMessageData) (RootReplyMsg, error
 	}
 	return RootReplyMsg{
 		SignedMessage: newSignedMessage(msg, signature),
-		Hash:          message_manager.Hash(msg.Data[:message_manager.HASH_LENGTH]),
+		Hash:          handler.Hash(msg.Data[:handler.HASH_LENGTH]),
 	}, nil
 }
 
@@ -215,13 +215,13 @@ func decodeDatumRequestMsg(msg networking.ReceivedMessageData) (DatumRequestMsg,
 	if err := basicValidation(msg); err != nil {
 		return DatumRequestMsg{}, err
 	}
-	if msg.Length < message_manager.HASH_LENGTH {
+	if msg.Length < handler.HASH_LENGTH {
 		return DatumRequestMsg{}, decoderError("invalid root hash")
 	}
 
 	return DatumRequestMsg{
 		UnsignedMessage: newUnsignedMessage(msg),
-		Hash:            message_manager.Hash(msg.Data[:message_manager.HASH_LENGTH]),
+		Hash:            handler.Hash(msg.Data[:handler.HASH_LENGTH]),
 	}, nil
 }
 
@@ -245,11 +245,11 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 	if err := basicValidation(msg); err != nil {
 		return DatumMsg{}, err
 	}
-	if msg.Length < message_manager.HASH_LENGTH+1 {
+	if msg.Length < handler.HASH_LENGTH+1 {
 		// +1 for type
 		return DatumMsg{}, decoderError("message too short")
 	}
-	hash := message_manager.Hash(msg.Data[:message_manager.HASH_LENGTH])
+	hash := handler.Hash(msg.Data[:handler.HASH_LENGTH])
 	var nodeType merkle_tree.NodeType
 	var data []byte
 	var children []merkle_tree.DirectoryRecordRaw
@@ -310,7 +310,7 @@ func decodeNoDatumMsg(msg networking.ReceivedMessageData) (NoDatumMsg, error) {
 	if err := basicValidation(msg); err != nil {
 		return NoDatumMsg{}, err
 	}
-	if msg.Length < message_manager.HASH_LENGTH {
+	if msg.Length < handler.HASH_LENGTH {
 		return NoDatumMsg{}, decoderError("invalid root hash")
 	}
 	signature, err := getSignature(msg)
@@ -320,7 +320,7 @@ func decodeNoDatumMsg(msg networking.ReceivedMessageData) (NoDatumMsg, error) {
 
 	return NoDatumMsg{
 		SignedMessage: newSignedMessage(msg, signature),
-		Hash:          message_manager.Hash(msg.Data[:message_manager.HASH_LENGTH]),
+		Hash:          handler.Hash(msg.Data[:handler.HASH_LENGTH]),
 	}, nil
 }
 

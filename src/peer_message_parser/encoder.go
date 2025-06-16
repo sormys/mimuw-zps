@@ -2,8 +2,8 @@ package peer_message_parser
 
 import (
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/merkle_tree"
-	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
 )
@@ -116,7 +116,7 @@ func encodeRootRequestMsg(msg RootRequestMsg) []byte {
 // =========================RootReplyMsg============================
 
 func encodeRootReplyMsg(msg RootReplyMsg) []byte {
-	length := uint16(message_manager.HASH_LENGTH)
+	length := uint16(handler.HASH_LENGTH)
 
 	result := createBaseMessage(msg.ID(), networking.ROOT_REPLY, length)
 	result = append(result, msg.Hash[:]...)
@@ -127,7 +127,7 @@ func encodeRootReplyMsg(msg RootReplyMsg) []byte {
 // =========================DatumRequestMsg=========================
 
 func encodeDatumRequestMsg(msg DatumRequestMsg) []byte {
-	length := uint16(message_manager.HASH_LENGTH)
+	length := uint16(handler.HASH_LENGTH)
 
 	result := createBaseMessage(msg.ID(), networking.DATUM_REQUEST, length)
 	result = append(result, msg.Hash[:]...)
@@ -162,7 +162,7 @@ func encodeDatumMsg(msg DatumMsg) []byte {
 		return nil
 	}
 
-	length := uint16(message_manager.HASH_LENGTH + len(dataBytes))
+	length := uint16(handler.HASH_LENGTH + len(dataBytes))
 
 	result := createBaseMessage(msg.ID(), networking.DATUM, length)
 
@@ -175,7 +175,7 @@ func encodeDatumMsg(msg DatumMsg) []byte {
 // =============================NoDatumMsg============================
 
 func encodeNoDatumMsg(msg NoDatumMsg) []byte {
-	length := uint16(message_manager.HASH_LENGTH)
+	length := uint16(handler.HASH_LENGTH)
 
 	result := createBaseMessage(msg.ID(), networking.NO_DATUM, length)
 	result = append(result, msg.Hash[:]...)
