@@ -66,7 +66,7 @@ func buildSampleTree() message_manager.TUIFolder {
 		Files:      files1,
 		Subfolders: []message_manager.TUIFolder{folder2, folder4},
 		Loaded:     false,
-		Expanded:   true,
+		Expanded:   false,
 	}
 
 	return folder1
@@ -133,7 +133,7 @@ func handleUserCommand(conn packet_manager.PacketConn,
 					// In this case we want download file from peer with hash. Expected output should be TUIMessage
 					// with INFO_TUI when download finished successful or ERROR_TUI with list of error
 
-					data = message_manager.CreateTuiMessageInfo(message_manager.INFO_TUI, "pobrano bardzo ciekawe zdjęcie")
+					data = message_manager.SetDownloadInfo(handler.File{Name: "stopy", Path: "/czesci_ciala/ciekawe_czesci_ciala"})
 					// data = connection_manager.DownloadFileFromPeer(conn, message.Payload().(message_manager.TuiMessageBasicInfo))
 				}
 			case message_manager.EXPAND_FOLDER:
@@ -143,6 +143,7 @@ func handleUserCommand(conn packet_manager.PacketConn,
 					// send a request to fetch data. Expected output is TuiMessage -> see expandFolder
 
 					// message.Payload().(BasicFolder) -> {Path: path, Peer: peer, Name: name, Hash: hash}
+
 					data = expandFolder(message.Payload().(message_manager.BasicFolder))
 				}
 			case message_manager.SHOW_DATA:

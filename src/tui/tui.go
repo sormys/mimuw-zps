@@ -122,7 +122,7 @@ func initialModel(received <-chan message_manager.TuiMessage,
 			Name:     "root",
 			Path:     "root",
 			Loaded:   false,
-			Expanded: true,
+			Expanded: false,
 		},
 		users:        users,
 		state:        CHOOSE_USER,
@@ -160,14 +160,13 @@ func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
 			folder.Files = data.Files
 			folder.Subfolders = data.Subfolders
 			folder.Loaded = true
-			folder.Expanded = true
 			m.buildVisible()
 		}
 		m.state = FOLDER
 
 	case message_manager.FILE_TUI:
 		file := message.Payload().(handler.File)
-		m.infoOutside = "Download " + file.Name
+		m.infoOutside = "Succesfully downloaded " + file.Name + " to directory: " + file.Path
 
 	case message_manager.PEERS_TUI:
 
@@ -267,6 +266,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if m.state == USER_INFO && m.selectedUser.Stage == peer_conn.CONNECT {
 				m.selectedUser = m.users[m.cursor]
+				m.cursor = 0
 				m.tuiSender <- message_manager.InitGetDataMessage(m.selectedUser)
 			}
 		case "r":
@@ -285,7 +285,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if folder == nil {
 						break
 					}
+					if folder.Expanded {
+						folder.Expanded = false
+						m.buildVisible()
+						break
+					}
 					if !folder.Loaded {
+						folder.Expanded = true
 						m.tuiSender <- message_manager.ExpandFolder(folder.Path, m.selectedUser, folder.Name, folder.Hash)
 					} else {
 						folder.Expanded = true

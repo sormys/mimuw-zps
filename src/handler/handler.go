@@ -7,6 +7,7 @@ type Hash = [HASH_LENGTH]byte
 type File struct {
 	Hash Hash
 	Name string
+	Path string
 }
 
 type Folder struct {

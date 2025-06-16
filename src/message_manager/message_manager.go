@@ -35,13 +35,6 @@ type TuiMessage interface {
 	RequestType() RequestTuiType
 }
 
-// type description struct {
-// 	name string
-
-// 	kto co zrobiłdescriptin
-// 	galene.org connect raport
-// }
-
 // Displays all errors and info messages in the TUI
 type TuiMessageInfo struct {
 	Notification RequestTuiType
@@ -196,5 +189,11 @@ func ReloadContent() TuiMessage {
 	return &TuiMessageInfo{
 		Notification: RELOAD_CONTENT,
 		Description:  []string{},
+	}
+}
+func SetDownloadInfo(file handler.File) TuiMessage {
+	return &TuiMessageFile{
+		Notification: FILE_TUI,
+		File:         file,
 	}
 }
