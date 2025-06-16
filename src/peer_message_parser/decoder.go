@@ -16,7 +16,7 @@ func basicValidation(msg networking.ReceivedMessageData) error {
 	if msg.Err != nil {
 		return msg.Err
 	}
-	if msg.Length < networking.MIN_MESSAGE_SIZE {
+	if uint16(len(msg.Data)) < msg.Length {
 		return decoderError("message too short")
 	}
 	return nil
