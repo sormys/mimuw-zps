@@ -3,6 +3,7 @@ package peer_message_parser
 import (
 	"errors"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"unicode/utf8"
@@ -226,17 +227,80 @@ func decodeDatumRequestMsg(msg networking.ReceivedMessageData) (DatumRequestMsg,
 
 // =============================DatumMsg============================
 
+func getNameFromBytes(nameBytes [32]byte) (string, error) {
+	var i int
+	for i = 31; i >= 0; i-- {
+		if nameBytes[i] != 0x0 {
+			break
+		}
+	}
+	importantBytes := nameBytes[:min(i, 31)]
+	if i == 0 || !utf8.Valid(importantBytes) {
+		return "", errors.New("invalid name of file/directory")
+	}
+	return string(importantBytes), nil
+}
+
 func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 	if err := basicValidation(msg); err != nil {
 		return DatumMsg{}, err
 	}
-	if msg.Length < message_manager.HASH_LENGTH {
-		return DatumMsg{}, decoderError("invalid root hash")
+	if msg.Length < message_manager.HASH_LENGTH+1 {
+		// +1 for type
+		return DatumMsg{}, decoderError("message too short")
+	}
+	hash := message_manager.Hash(msg.Data[:message_manager.HASH_LENGTH])
+	var nodeType merkle_tree.NodeType
+	var data []byte
+	var children []merkle_tree.DirectoryRecordRaw
+	switch msg.Data[0] {
+	case 0x0:
+		// CHUNK
+		if msg.Length > MAX_CHUNK_SIZE+1 {
+			return DatumMsg{}, decoderError("chunk data too big")
+		}
+		nodeType = merkle_tree.CHUNK
+		data = msg.Data[1:]
+	case 0x01:
+		// DIRECTORY
+		if (msg.Length-1)%DIR_ENTRY_SIZE != 0 || (msg.Length-1)/DIR_ENTRY_SIZE > DIR_MAX_ENTRIES {
+			return DatumMsg{}, decoderError("directory entires are of incorrect length")
+		}
+		records := make([]merkle_tree.DirectoryRecordRaw, (msg.Length-1)/DIR_ENTRY_SIZE)
+		recordStart := 1
+		for i := range len(records) {
+			n, err := getNameFromBytes([DIR_HALF_ENTRY]byte(msg.Data[recordStart : recordStart+DIR_HALF_ENTRY]))
+			if err != nil {
+				return DatumMsg{}, decoderError(err.Error())
+			}
+			h := msg.Data[recordStart+DIR_HALF_ENTRY : recordStart+DIR_ENTRY_SIZE]
+			records[i] = merkle_tree.DirectoryRecordRaw{Name: n, Hash: h}
+			recordStart += 64
+		}
+		nodeType = merkle_tree.DIRECTORY
+		children = records
+	case 0x03:
+		// BIG
+		recordsLen := (msg.Length - 1) / BIG_ENTRY_SIZE
+		if (msg.Length-1)%BIG_ENTRY_SIZE != 0 || recordsLen > BIG_MAX_ENTRIES || recordsLen < BIG_MIN_ENTRY_SIZE {
+			return DatumMsg{}, decoderError("big node children are of incorrect length")
+		}
+		records := make([]merkle_tree.DirectoryRecordRaw, recordsLen)
+		recordStart := 1
+		for i := range recordsLen {
+			records[i] = merkle_tree.DirectoryRecordRaw{Hash: msg.Data[recordStart : recordStart+BIG_ENTRY_SIZE]}
+			recordStart += BIG_ENTRY_SIZE
+		}
+		nodeType = merkle_tree.BIG
+		children = records
 	}
 
 	return DatumMsg{
 		UnsignedMessage: newUnsignedMessage(msg),
-		Hash:            message_manager.Hash(msg.Data[:message_manager.HASH_LENGTH]),
+		Hash:            hash,
+		NodeType:        nodeType,
+		Data:            data,
+		Children:        children,
 	}, nil
 }
 

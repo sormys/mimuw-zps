@@ -2,6 +2,7 @@ package peer_message_parser
 
 import (
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
@@ -136,10 +137,38 @@ func encodeDatumRequestMsg(msg DatumRequestMsg) []byte {
 // =============================DatumMsg============================
 
 func encodeDatumMsg(msg DatumMsg) []byte {
-	length := uint16(message_manager.HASH_LENGTH)
+	var dataBytes []byte
+
+	switch msg.NodeType {
+	case merkle_tree.CHUNK:
+		dataBytes = append([]byte{0x0}, msg.Data...)
+
+	case merkle_tree.DIRECTORY:
+		dataBytes = []byte{0x01}
+		for _, child := range msg.Children {
+			nameBytes := make([]byte, DIR_HALF_ENTRY)
+			copy(nameBytes, []byte(child.Name))
+			dataBytes = append(dataBytes, nameBytes...)
+			dataBytes = append(dataBytes, child.Hash...)
+		}
+
+	case merkle_tree.BIG:
+		dataBytes = []byte{0x03}
+		for _, child := range msg.Children {
+			dataBytes = append(dataBytes, child.Hash...)
+		}
+
+	default:
+		return nil
+	}
+
+	length := uint16(message_manager.HASH_LENGTH + len(dataBytes))
 
 	result := createBaseMessage(msg.ID(), networking.DATUM, length)
+
 	result = append(result, msg.Hash[:]...)
+	result = append(result, dataBytes...)
+
 	return result
 }
 

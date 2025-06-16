@@ -3,6 +3,7 @@ package peer_message_parser
 import (
 	"crypto/ecdsa"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
@@ -160,9 +161,21 @@ func (dr DatumRequestMsg) Type() networking.MessageType {
 
 // =============================DatumMsg============================
 
+const MAX_CHUNK_SIZE = 1024
+const DIR_MAX_ENTRIES = 16
+const DIR_ENTRY_SIZE = 64
+const DIR_HALF_ENTRY = 32
+const BIG_MAX_ENTRIES = 16
+const BIG_ENTRY_SIZE = 32
+const BIG_MIN_ENTRY_SIZE = 2
+
+// Data is only available if node type is chunk, children available otherwise
 type DatumMsg struct {
 	UnsignedMessage
-	Hash message_manager.Hash
+	Hash     message_manager.Hash
+	NodeType merkle_tree.NodeType
+	Data     []byte
+	Children []merkle_tree.DirectoryRecordRaw
 }
 
 func (dr DatumMsg) Type() networking.MessageType {
