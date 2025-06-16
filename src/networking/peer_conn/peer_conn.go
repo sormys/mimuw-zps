@@ -5,11 +5,20 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/utility"
 	"net"
 )
 
 const USER_NAME = "NICPON"
+
+type stage = string
+
+const (
+	NOT_CONNECT stage = "not connect"
+	CONNECT     stage = "connect"
+	PENDING     stage = "pending"
+)
 
 var userMap = map[string]Peer{}
 
@@ -18,6 +27,8 @@ type Peer struct {
 	Addresses []net.Addr
 	Name      string
 	Key       encryption.Key
+	Folders   []handler.Folder
+	Stage     stage
 }
 
 type HandshakeType struct {

@@ -1,39 +1,57 @@
 package message_manager
 
 import (
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/networking/peer_conn"
 )
-
-const HASH_LENGTH = 32
 
 type RequestTuiType = string
 
 type Download struct {
 	Peer peer_conn.Peer
-	Hash Hash
+	Hash handler.Hash
 }
 
 var (
 	INFO           = RequestTuiType("connect")
 	RELOAD_CONTENT = RequestTuiType("reload_content")
 	RELOAD_PEERS   = RequestTuiType("reload_peers")
-	DOWNLOAD       = RequestTuiType("sent")
+	DOWNLOAD       = RequestTuiType("download")
 	PEERS          = RequestTuiType("peers")
 	CONNECT        = RequestTuiType("connect")
+	SHOW_DATA      = RequestTuiType("show_data")
 )
-
-type Hash = [HASH_LENGTH]byte
 
 const (
-	INFO_TUI  = RequestTuiType("INFO_TUI")
-	ERROR_TUI = RequestTuiType("ERROR_TUI")
-	PEERS_TUI = RequestTuiType("PEERS_TUI")
+	INFO_TUI      = RequestTuiType("INFO_TUI")
+	ERROR_TUI     = RequestTuiType("ERROR_TUI")
+	PEERS_TUI     = RequestTuiType("PEERS_TUI")
+	FOLDER_TUI    = RequestTuiType("FOLDER_TUI")
+	FILE_TUI      = RequestTuiType("FILE_TUI")
+	EXPAND_FOLDER = RequestTuiType("EXPAND_FOLDER")
 )
+
+type TUIFolder struct {
+	Hash       handler.Hash
+	Name       string
+	Path       string
+	Files      []handler.File
+	Subfolders []TUIFolder
+	Loaded     bool
+	Expanded   bool
+}
 
 type TuiMessage interface {
 	Payload() any
 	RequestType() RequestTuiType
 }
+
+// type description struct {
+// 	name string
+
+// 	kto co zrobiłdescriptin
+// 	galene.org connect raport
+// }
 
 // Displays all errors and info messages in the TUI
 type TuiMessageInfo struct {
@@ -48,18 +66,36 @@ type TuiMessageBasicInfo struct {
 	FileInfo     BasicFileInfo
 }
 
+type TuiMessageFolder struct {
+	Notification RequestTuiType
+	Folder       TUIFolder
+}
+
+type TuiMessageFile struct {
+	Notification RequestTuiType
+	File         handler.File
+}
+
 type TuiMessagePeers struct {
 	Notification RequestTuiType
 	Peers        []peer_conn.Peer
 }
 
 type BasicFileInfo struct {
-	Hash Hash
+	Hash handler.Hash
 	Peer peer_conn.Peer
 }
 
-func newBasicFileInfo(hash Hash, peer peer_conn.Peer) BasicFileInfo {
-	return BasicFileInfo{Hash: hash, Peer: peer}
+type BasicFolder struct {
+	Path string
+	Name string
+	Hash handler.Hash
+	Peer peer_conn.Peer
+}
+
+type ExpandFolderInfo struct {
+	Notification RequestTuiType
+	Info         BasicFolder
 }
 
 func (s *TuiMessageInfo) Payload() any                { return s.Description }
@@ -70,6 +106,15 @@ func (s *TuiMessageBasicInfo) RequestType() RequestTuiType { return s.Notificati
 
 func (s *TuiMessagePeers) Payload() any                { return s.Peers }
 func (s *TuiMessagePeers) RequestType() RequestTuiType { return s.Notification }
+
+func (s *TuiMessageFolder) Payload() any                { return s.Folder }
+func (s *TuiMessageFolder) RequestType() RequestTuiType { return s.Notification }
+
+func (s *TuiMessageFile) Payload() any                { return s.File }
+func (s *TuiMessageFile) RequestType() RequestTuiType { return s.Notification }
+
+func (s *ExpandFolderInfo) Payload() any                { return s.Info }
+func (s *ExpandFolderInfo) RequestType() RequestTuiType { return s.Notification }
 
 func ConvertErrorToTuiMessage(err error) TuiMessage {
 	return &TuiMessageInfo{
@@ -90,10 +135,10 @@ func ConvertErrorsToTuiMessage(err []error) TuiMessage {
 	}
 }
 
-func CreateTuiMessageTypeBasicInfo(hash Hash, peer peer_conn.Peer) TuiMessage {
+func CreateTuiMessageTypeBasicInfo(hash handler.Hash, peer peer_conn.Peer) TuiMessage {
 	return &TuiMessageBasicInfo{
 		Notification: ERROR_TUI,
-		FileInfo:     newBasicFileInfo(hash, peer),
+		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
 	}
 }
 
@@ -122,6 +167,45 @@ func IsEmpty(data TuiMessage) bool {
 func CreateEmptyMessageInfo() TuiMessage {
 	return &TuiMessageInfo{
 		Notification: "",
+		Description:  []string{},
+	}
+}
+
+func InitConnectionMessage(peer peer_conn.Peer) TuiMessage {
+	return &TuiMessagePeers{
+		Notification: CONNECT,
+		Peers:        []peer_conn.Peer{peer},
+	}
+}
+
+func InitGetDataMessage(peer peer_conn.Peer) TuiMessage {
+	return &TuiMessagePeers{
+		Notification: SHOW_DATA,
+		Peers:        []peer_conn.Peer{peer},
+	}
+}
+
+func CreateTuiFolders(folder TUIFolder) TuiMessage {
+	return &TuiMessageFolder{
+		Notification: FOLDER_TUI,
+		Folder:       folder,
+	}
+}
+func ExpandFolder(path string, peer peer_conn.Peer, name string, hash handler.Hash) TuiMessage {
+	return &ExpandFolderInfo{
+		Notification: EXPAND_FOLDER,
+		Info:         BasicFolder{Path: path, Peer: peer, Name: name, Hash: hash},
+	}
+}
+func DownloadFile(hash handler.Hash, peer peer_conn.Peer) TuiMessage {
+	return &TuiMessageBasicInfo{
+		Notification: DOWNLOAD,
+		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
+	}
+}
+func ReloadContent() TuiMessage {
+	return &TuiMessageInfo{
+		Notification: RELOAD_CONTENT,
 		Description:  []string{},
 	}
 }

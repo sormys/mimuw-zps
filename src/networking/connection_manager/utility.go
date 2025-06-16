@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/message_manager"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/srv_conn"
@@ -41,11 +41,11 @@ func verifyIdAndType(data networking.ReceivedMessageData, id utility.ID, expecte
 	return true
 }
 
-func getHashFromRootReply(data networking.ReceivedMessageData) message_manager.Hash {
+func getHashFromRootReply(data networking.ReceivedMessageData) handler.Hash {
 	if len(data.Data) != 2+32 {
-		return message_manager.Hash{}
+		return handler.Hash{}
 	}
-	var hash message_manager.Hash
+	var hash handler.Hash
 	copy(hash[:], data.Data[2:])
 	return hash
 }
@@ -72,8 +72,8 @@ func createHandshakeReply(address net.Addr, id utility.ID, nickname string) pack
 	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 }
 
-func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash message_manager.Hash) encryption.Message {
-	length := utility.GetBytesFromNumber(message_manager.HASH_LENGTH)
+func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash handler.Hash) encryption.Message {
+	length := utility.GetBytesFromNumber(handler.HASH_LENGTH)
 
 	message := utility.GenerateEmptyBuffor()
 	message = append(message, id[:]...)
@@ -83,7 +83,7 @@ func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessag
 	return message
 }
 func createRootRequest(address net.Addr, id utility.ID) packet_manager.PacketSendRequest {
-	message := createDatumRequestTemplate(id, ROOT_REQUEST, message_manager.Hash{})
+	message := createDatumRequestTemplate(id, ROOT_REQUEST, handler.Hash{})
 	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewRetryPolicyRequest()}
 }
 
@@ -104,7 +104,7 @@ func createErrorReply(address net.Addr, err error) packet_manager.PacketSendRequ
 	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewPolicyHandshake()}
 }
 
-func createDatumRequest(address net.Addr, hash message_manager.Hash) packet_manager.PacketSendRequest {
+func createDatumRequest(address net.Addr, hash handler.Hash) packet_manager.PacketSendRequest {
 	id := utility.GenerateID()
 	message := createDatumRequestTemplate(id, DATUM_REQUEST, hash)
 	return packet_manager.PacketSendRequest{Addr: address, Message: message, MessRetryPolicy: networking.NewRetryPolicyRequest()}
