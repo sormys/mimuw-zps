@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/handler"
 	"mimuw_zps/src/utility"
 	"net"
 )
@@ -20,14 +19,11 @@ const (
 	PENDING       stage = "pending"
 )
 
-var userMap = map[string]Peer{}
-
 // Stage can me ENUM, for example: in the middle of the handshake, or post-handshake
 type Peer struct {
 	Addresses []net.Addr
 	Name      string
 	Key       encryption.Key
-	Folders   []handler.Folder
 	Stage     stage
 }
 
