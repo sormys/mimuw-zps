@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/message_manager"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
 	"net"
@@ -39,11 +39,11 @@ func verifyIdAndType(data networking.ReceivedMessageData, id utility.ID, expecte
 	return true
 }
 
-func getHashFromRootReply(data networking.ReceivedMessageData) message_manager.Hash {
+func getHashFromRootReply(data networking.ReceivedMessageData) handler.Hash {
 	if len(data.Data) != 2+32 {
-		return message_manager.Hash{}
+		return handler.Hash{}
 	}
-	var hash message_manager.Hash
+	var hash handler.Hash
 	copy(hash[:], data.Data[2:])
 	return hash
 }
@@ -61,8 +61,8 @@ func getSignatureFromReceivedHandshake(data networking.ReceivedMessageData) encr
 	return encryption.Signature(data.Data[data.Length : data.Length+encryption.KEY_LENGTH])
 }
 
-func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash message_manager.Hash) encryption.Message {
-	length := utility.GetBytesFromNumber(message_manager.HASH_LENGTH)
+func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash handler.Hash) encryption.Message {
+	length := utility.GetBytesFromNumber(handler.HASH_LENGTH)
 
 	message := utility.GenerateEmptyBuffor()
 	message = append(message, id[:]...)

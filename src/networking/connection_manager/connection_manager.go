@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/handler"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
@@ -16,8 +17,7 @@ import (
 func sendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
 	conn.SendReply(addr, createErrorReply(err))
 }
-
-func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash message_manager.Hash) (networking.ReceivedMessageData, message_manager.TuiMessage) {
+func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash handler.Hash) (networking.ReceivedMessageData, message_manager.TuiMessage) {
 	id := utility.GenerateID()
 	for _, address := range addr {
 		message := createDatumRequestTemplate(id, DATUM_REQUEST, hash)
@@ -40,7 +40,7 @@ func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash mess
 func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networking.ReceivedMessageData, message_manager.TuiMessage) {
 	id := utility.GenerateID()
 	for _, address := range addr {
-		message := createDatumRequestTemplate(id, ROOT_REQUEST, message_manager.Hash{})
+		message := createDatumRequestTemplate(id, ROOT_REQUEST, handler.Hash{})
 		receivedData := conn.SendRequest(address, message, networking.NewRetryPolicyRequest())
 		if verifyIdAndType(receivedData, id, networking.ROOT_REQUEST) {
 			return receivedData, message_manager.CreateEmptyMessageInfo()
@@ -52,6 +52,7 @@ func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networkin
 
 // Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickname string) message_manager.TuiMessage {
+	slog.Debug("Starting connection with", "message", peer.Name)
 	addresses := peer.Addresses
 	for _, addr := range addresses {
 		id := utility.GenerateID()

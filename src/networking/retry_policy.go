@@ -18,6 +18,10 @@ func NewPolicyHandshake() *RetryPolicyHandshake {
 	return &RetryPolicyHandshake{retryLimit: 3}
 }
 
+func NewRetryPolicyAwaitOnce() *RetryPolicyRequest {
+	return &RetryPolicyRequest{retryCount: 1}
+}
+
 func NewRetryPolicyRequest() *RetryPolicyRequest {
 	return &RetryPolicyRequest{retryCount: 2}
 }
