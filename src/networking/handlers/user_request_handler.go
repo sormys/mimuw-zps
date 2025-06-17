@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"mimuw_zps/src/encryption"
+	"mimuw_zps/src/handler"
 	mt "mimuw_zps/src/merkle_tree"
 	mm "mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
@@ -125,7 +126,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 		// No such node in memory - ask peer
 		request := pmp.DatumRequestMsg{
 			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(peer.Addresses[0], utility.GenerateID()),
-			Hash:            mm.Hash(hashBytes),
+			Hash:            handler.Hash(hashBytes),
 		}
 		// FIXME(sormys) send to all addresses, check if any address available
 		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
@@ -226,7 +227,7 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 				{
 					data = ReloadPeerContent(conn, message.Payload().(mm.TuiMessageBasicInfo))
 				}
-			case mm.GET_CONTENT:
+			case mm.EXPAND_FOLDER:
 				{
 					data = GetDirectoryContent(conn, message.Payload().(mm.TuiMessageBasicInfo), peersTrees, &mutex)
 				}
