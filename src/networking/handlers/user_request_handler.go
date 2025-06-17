@@ -20,14 +20,26 @@ import (
 func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickname string) mm.TuiMessage {
 	addresses := peer.Addresses
 	for _, addr := range addresses {
-		id := utility.GenerateID()
-		message := srv_conn.CreateHandshakeBytes(HELLO, nickname, id)
-		info := conn.SendRequest(addr, message, networking.NewPolicyHandshake())
-		if verifyIdAndType(info, id, networking.HELLO_REPLY) &&
-			encryption.VerifySignature(info.Raw[:networking.MIN_HELLO_SIZE+info.Length], getSignatureFromReceivedHandshake(info), encryption.ParsePublicKey(peer.Key)) {
+		request := pmp.HelloMsg{
+			SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+			Extensions:    pmp.Extensions{},
+			Name:          nickname,
+		}
+		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
+
+		decoded, err := pmp.DecodeMessage(info)
+		if err != nil {
+			return mm.TuiError(err.Error())
+		}
+		switch msg := decoded.(type) {
+		case pmp.ErrorMsg:
+			return mm.TuiError("Error reply from peer: " + msg.Message)
+		case pmp.HelloReplyMsg:
+			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+				return mm.TuiError("Invlid hello reply signature")
+			}
 			return mm.TuiInfo("Successfully connected to address " + addr.String())
 		}
-
 	}
 
 	return mm.TuiError("Cannot connect to any of these addresses" + printAddreses(addresses))
@@ -68,6 +80,7 @@ func DownloadFileFromPeer(conn packet_manager.PacketConn, message mm.TuiMessageB
 }
 
 type discoveredType struct {
+	startHash string
 	hash      string
 	cacheType mt.NodeType
 	msg       pmp.DatumMsg
@@ -95,6 +108,7 @@ func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData
 
 func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeHash string,
 	tree mt.RemoteMerkleTree, dscvChan chan<- discoveredType) {
+	startHash := nodeHash
 	hashBytes, err := mt.ConvertStringHashToBytes(nodeHash)
 	if err != nil {
 		dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid hash")}
@@ -104,20 +118,20 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 		// Check if we have it already in the tree - cache
 		if node := tree.GetNode(nodeHash); node != nil {
 			if node.IsDir() {
-				dscvChan <- discoveredType{hash: nodeHash, cacheType: mt.DIRECTORY}
+				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.DIRECTORY}
 				return
 			} else if node.IsFile() {
-				dscvChan <- discoveredType{hash: nodeHash, cacheType: mt.CHUNK}
+				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.CHUNK}
 				return
 			}
 			if len(node.Children()) == 0 {
-				dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid data in tree")}
+				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: errors.New("invalid data in tree")}
 				return
 			}
 			nodeHash = node.Children()[0].Hash()
 			hashBytes, err = mt.ConvertStringHashToBytes(nodeHash)
 			if err != nil {
-				dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid hash in tree")}
+				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: errors.New("invalid hash in tree")}
 				return
 			}
 			continue
@@ -125,17 +139,18 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 
 		// No such node in memory - ask peer
 		request := pmp.DatumRequestMsg{
-			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(peer.Addresses[0], utility.GenerateID()),
+			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(utility.GenerateID()),
 			Hash:            handler.Hash(hashBytes),
 		}
 		// FIXME(sormys) send to all addresses, check if any address available
 		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
 			networking.NewRetryPolicyRequest())
 		if data.Err != nil {
-			dscvChan <- discoveredType{hash: nodeHash, err: data.Err}
+			dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: data.Err}
 			return
 		}
 		dscvType := decodeDatumResponse(nodeHash, data)
+		dscvType.startHash = startHash
 		if dscvType.err != nil || dscvType.msg.NodeType != mt.BIG {
 			// The type has been discovered or error occured
 			dscvChan <- dscvType
@@ -159,15 +174,14 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBasicInfo,
 	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
 	treeMutex.Lock()
+	defer treeMutex.Unlock()
 	tree, exist := peersTrees[message.FileInfo.Peer.Name]
 	if !exist {
-		treeMutex.Unlock()
 		return mm.TuiError("No tree for given peer")
 	}
 	nodeHash := mt.ConvertHashBytesToString(message.FileInfo.Hash[:])
 	node := tree.GetNode(nodeHash)
 	if node.Type() != mt.DIRECTORY {
-		treeMutex.Unlock()
 		return mm.TuiError("The node is not a directory")
 	}
 	// FIXME(sormys) this should probably be an option in packet manager, for now,
@@ -185,14 +199,12 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 			break
 		}
 		if dscvType.msg.NodeType == mt.DIRECTORY {
-			err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children)
-			if err != nil {
+			if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
 				return mm.TuiError(dscvType.err.Error())
 			}
 		}
 		if dscvType.msg.NodeType == mt.CHUNK {
-			err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data)
-			if err != nil {
+			if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
 				return mm.TuiError(dscvType.err.Error())
 			}
 		}

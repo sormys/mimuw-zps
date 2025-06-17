@@ -6,22 +6,20 @@ import (
 	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
-	"net"
 )
 
-func NewEmptyBaseMassage(addr net.Addr, id utility.ID) BaseMessage {
+func NewEmptyBaseMassage(id utility.ID) BaseMessage {
 	return BaseMessage{
-		addr: addr,
-		id:   id,
+		id: id,
 	}
 }
 
-func NewEmtpyUnsignedMessage(addr net.Addr, id utility.ID) UnsignedMessage {
-	return UnsignedMessage{NewEmptyBaseMassage(addr, id)}
+func NewEmtpyUnsignedMessage(id utility.ID) UnsignedMessage {
+	return UnsignedMessage{NewEmptyBaseMassage(id)}
 }
 
-func NewEmptySignedMessage(addr net.Addr, id utility.ID) SignedMessage {
-	return SignedMessage{BaseMessage: NewEmptyBaseMassage(addr, id), Signature: encryption.Key{}}
+func NewEmptySignedMessage(id utility.ID) SignedMessage {
+	return SignedMessage{BaseMessage: NewEmptyBaseMassage(id), Signature: encryption.Key{}}
 }
 
 // EncodeMessage converts a peerMessage to raw bytes for transmission
