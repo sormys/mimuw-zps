@@ -95,7 +95,7 @@ func (m *model) showTree() string {
 	var arrow string
 	for i := 0; i < len(m.VisibleItems); i++ {
 		object := m.VisibleItems[i]
-		spaces := strings.Repeat(" ", object.Depth)
+		spaces := strings.Repeat("  ", object.Depth)
 
 		if object.isFolder {
 			mark = "/"

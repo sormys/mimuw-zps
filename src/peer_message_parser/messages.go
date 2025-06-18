@@ -10,7 +10,7 @@ import (
 	"net"
 )
 
-const EXTENSIONS_LEN = 32
+const EXTENSIONS_LEN = 4
 
 type Extensions [EXTENSIONS_LEN]byte
 
@@ -124,7 +124,7 @@ func (hrm HelloReplyMsg) Type() networking.MessageType {
 }
 
 func (hrm HelloReplyMsg) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(hrm.raw[:networking.MIN_HELLO_SIZE+hrm.length], hrm.Signature, publicKey)
+	return encryption.VerifySignature(hrm.raw[:hrm.length+networking.MIN_MESSAGE_SIZE], hrm.Signature, publicKey)
 }
 
 // ========================RootRequestMsg===========================

@@ -36,7 +36,7 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 			return mm.TuiError("Error reply from peer: " + msg.Message)
 		case pmp.HelloReplyMsg:
 			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
-				return mm.TuiError("Invlid hello reply signature")
+				return mm.TuiError("Invalid hello reply signature")
 			}
 			return mm.TuiInfo("Successfully connected to address " + addr.String())
 		}
@@ -209,6 +209,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 			}
 		}
 	}
+	slog.Debug("JESTEM W GET DIRECTORY CONTENT")
 	// TODO(sormys) Gather types and send the info using standard inteface
 	return mm.TuiInfo("Correctly discovered the type")
 }
@@ -229,23 +230,41 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 			switch message.RequestType() {
 			case mm.CONNECT:
 				{
-					data = StartConnection(conn, message.Payload().(peer_conn.Peer), nickname)
-				}
-			case mm.RELOAD_PEERS:
-				{
-					data = ReloadAvailablePeers(server)
+					// Expected output is peer when after successful handshake. You can use
+					// message_manager.InitConnectionMessage(peer)
+
+					//data = connect(message.Payload().([]peer_conn.Peer)[0])
+					//data = connection_manager.StartConnection(conn, message.Payload().([]peer_conn.Peer)[0], nickname)
+					data = StartConnection(conn, message.Payload().([]peer_conn.Peer)[0], nickname)
 				}
 			case mm.RELOAD_CONTENT:
 				{
-					data = ReloadPeerContent(conn, message.Payload().(mm.TuiMessageBasicInfo))
+					// data = ReloadPeerContent(conn, message.Payload().(mm.TuiMessageBasicInfo))
+
+					// in this state handler should reset all his states!
+
+					data = ReloadAvailablePeers(server)
 				}
 			case mm.EXPAND_FOLDER:
 				{
+					// In this case the folder's contens are not yet loaded in the TUI.
+					// Check if the contents are available in the cache. If not,
+					// send a request to fetch data. Expected output is TuiMessage -> see expandFolder
+
+					// message.Payload().(BasicFolder) -> {Path: path, Peer: peer, Name: name, Hash: hash}
 					data = GetDirectoryContent(conn, message.Payload().(mm.TuiMessageBasicInfo), peersTrees, &mutex)
 				}
 			case mm.DOWNLOAD:
 				{
 					data = DownloadFileFromPeer(conn, message.Payload().(mm.TuiMessageBasicInfo))
+				}
+
+			case mm.SHOW_DATA:
+				{
+					// In this case we want discover user's file. So you have to sent RootRequest
+					// user = message.Payload().([]peer_conn.Peer)[0]
+					// Expected output is TuiMessage -> see expand Folder
+					// data = showFiles()
 				}
 			}
 			if err != nil {

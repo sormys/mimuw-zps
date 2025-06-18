@@ -61,7 +61,7 @@ func newBaseMassage(msg networking.ReceivedMessageData) BaseMessage {
 }
 
 func getSignature(msg networking.ReceivedMessageData) (encryption.Key, error) {
-	if len(msg.Data) <= int(msg.Length)+encryption.KEY_LENGTH {
+	if len(msg.Data) < int(msg.Length)+encryption.KEY_LENGTH {
 		return encryption.Key{}, decoderError("message not signed")
 	}
 	return encryption.Key(msg.Data[msg.Length : msg.Length+encryption.KEY_LENGTH]), nil
