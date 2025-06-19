@@ -181,12 +181,8 @@ func decodeRootRequestMsg(msg networking.ReceivedMessageData) (RootRequestMsg, e
 	if msg.Length > 0 {
 		return RootRequestMsg{}, decoderError("root request should have empty body")
 	}
-	signature, err := getSignature(msg)
-	if err != nil {
-		return RootRequestMsg{}, err
-	}
 	return RootRequestMsg{
-		SignedMessage: newSignedMessage(msg, signature),
+		UnsignedMessage: newUnsignedMessage(msg),
 	}, nil
 }
 

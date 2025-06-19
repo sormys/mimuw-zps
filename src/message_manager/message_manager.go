@@ -119,7 +119,7 @@ func ConvertErrorsToTuiMessage(err []error) TuiMessage {
 
 func CreateTuiMessageTypeBasicInfo(hash handler.Hash, peer peer_conn.Peer) TuiMessage {
 	return &TuiMessageBasicInfo{
-		Notification: ERROR_TUI,
+		Notification: INFO_TUI,
 		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
 	}
 }

@@ -120,6 +120,7 @@ func initialModel(received <-chan message_manager.TuiMessage,
 		root: message_manager.TUIFolder{
 			Name:     "root",
 			Path:     "root",
+			Hash:     handler.Hash{},
 			Loaded:   false,
 			Expanded: false,
 		},
@@ -149,12 +150,18 @@ func findFolder(folder *message_manager.TUIFolder, path string) *message_manager
 
 // Receives external data and updates internal states
 func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
-
 	switch message.RequestType() {
 
 	case message_manager.FOLDER_TUI:
 		data := message.Payload().(message_manager.TUIFolder)
 		folder := findFolder(&m.root, data.Path)
+		zeroHash := handler.Hash{}
+		if folder.Path == "root" && folder.Hash == zeroHash {
+			folder.Hash = data.Hash
+			m.buildVisible()
+			m.state = FOLDER
+			break
+		}
 		if folder != nil {
 			folder.Files = data.Files
 			folder.Subfolders = data.Subfolders
@@ -220,7 +227,6 @@ func (m model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
-
 	case message_manager.TuiMessage:
 		m.manageOutsideInfo(msg)
 		return m, waitForOutsideInfo(m.tuiReceiver)
@@ -285,6 +291,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if folder == nil {
 						break
 					}
+
 					if folder.Expanded {
 						folder.Expanded = false
 						m.buildVisible()

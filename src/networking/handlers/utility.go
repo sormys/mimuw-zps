@@ -40,11 +40,11 @@ func verifyIdAndType(data networking.ReceivedMessageData, id utility.ID, expecte
 }
 
 func getHashFromRootReply(data networking.ReceivedMessageData) handler.Hash {
-	if len(data.Data) != 2+32 {
+	if len(data.Data) < 32 {
 		return handler.Hash{}
 	}
 	var hash handler.Hash
-	copy(hash[:], data.Data[2:])
+	copy(hash[:], data.Data[:32])
 	return hash
 }
 

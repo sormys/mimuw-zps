@@ -8,7 +8,9 @@ import (
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
+	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
+	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
 	"net"
 )
@@ -37,17 +39,30 @@ func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash hand
 }
 
 // Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
-func sendRootRequest(conn packet_manager.PacketConn, addr []net.Addr) (networking.ReceivedMessageData, message_manager.TuiMessage) {
-	id := utility.GenerateID()
+func sendRootRequest(conn packet_manager.PacketConn, peer peer_conn.Peer) (pmp.RootReplyMsg, error) {
+	addr := peer.Addresses
 	for _, address := range addr {
-		message := createDatumRequestTemplate(id, ROOT_REQUEST, handler.Hash{})
-		receivedData := conn.SendRequest(address, message, networking.NewRetryPolicyRequest())
-		if verifyIdAndType(receivedData, id, networking.ROOT_REQUEST) {
-			return receivedData, message_manager.CreateEmptyMessageInfo()
+		request := pmp.RootRequestMsg{
+			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(utility.GenerateID()),
 		}
+		info := conn.SendRequest(address, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
 
+		decoded, err := pmp.DecodeMessage(info)
+		if err != nil {
+			return pmp.RootReplyMsg{}, err
+		}
+		slog.Debug("Decoded message", "msg", decoded)
+		switch msg := decoded.(type) {
+		case pmp.ErrorMsg:
+			return pmp.RootReplyMsg{}, errors.New(msg.Message)
+		case pmp.RootReplyMsg:
+			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+				return pmp.RootReplyMsg{}, errors.New("incorrect verify signature")
+			}
+			// return pmp.RootReplyMsg{Hash: handler.Hash(receivedData.Data[:32])}, nil
+		}
 	}
-	return networking.ReceivedMessageData{}, message_manager.CreateTuiMessageInfo(message_manager.ERROR_TUI, "None of peers responds")
+	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
 }
 
 func SendHelloReply(conn packet_manager.PacketConn, data networking.ReceivedMessageData, server srv_conn.Server, nickname string) error {

@@ -38,7 +38,8 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
 				return mm.TuiError("Invalid hello reply signature")
 			}
-			return mm.TuiInfo("Successfully connected to address " + addr.String())
+			return mm.InitConnectionMessage(peer)
+			// return mm.TuiInfo("Successfully connected to address " + addr.String())
 		}
 	}
 
@@ -46,14 +47,61 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 }
 
 // reloads all files associated with the provided peer in message
-func ReloadPeerContent(conn packet_manager.PacketConn, message mm.TuiMessageBasicInfo) mm.TuiMessage {
-	peer := message.FileInfo.Peer
-	receivedData, info := sendRootRequest(conn, peer.Addresses)
-	if !mm.IsEmpty(info) {
-		return info
+
+func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
+	receivedData, err := sendRootRequest(conn, peer)
+	if err != nil {
+		return mm.ConvertErrorToTuiMessage(err)
 	}
 
-	return mm.CreateTuiMessageTypeBasicInfo(getHashFromRootReply(receivedData), peer)
+	hash := mt.ConvertHashBytesToString(receivedData.Hash[:])
+	tree := mt.NewRemoteMerkleTree(hash)
+	ch := make(chan discoveredType, 1)
+
+	discoverNodeType(conn, peer, hash, tree, ch)
+
+	dscvType := <-ch
+
+	if dscvType.err != nil {
+		return mm.TuiError(dscvType.err.Error())
+	}
+	if dscvType.cacheType == mt.DIRECTORY || dscvType.cacheType == mt.CHUNK {
+		return mm.ConvertErrorToTuiMessage(err)
+	}
+	if dscvType.msg.NodeType == mt.DIRECTORY {
+		//jestem folderem
+		if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
+			return mm.TuiError(dscvType.err.Error())
+		}
+	}
+	if dscvType.msg.NodeType == mt.CHUNK {
+		// jestem plikiem
+		if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
+			return mm.TuiError(dscvType.err.Error())
+		}
+	}
+
+	//czy root jest plikiem zcy folderem
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	peersTrees[peer.Name] = tree
+
+	// slog.Debug("ReloadPeerContent result", "data", data)
+
+	folder := mm.TUIFolder{
+		Hash:       handler.Hash{},
+		Name:       "root",
+		Path:       "root",
+		Files:      nil,
+		Subfolders: nil,
+		Loaded:     false,
+		Expanded:   false,
+	}
+
+	return mm.CreateTuiFolders(folder)
+	// return mm.CreateTuiMessageTypeBasicInfo(getHashFromRootReply(receivedData), peer)
 
 }
 
@@ -171,15 +219,15 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 	}
 }
 
-func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBasicInfo,
+func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
 	treeMutex.Lock()
 	defer treeMutex.Unlock()
-	tree, exist := peersTrees[message.FileInfo.Peer.Name]
+	tree, exist := peersTrees[message.Peer.Name]
 	if !exist {
 		return mm.TuiError("No tree for given peer")
 	}
-	nodeHash := mt.ConvertHashBytesToString(message.FileInfo.Hash[:])
+	nodeHash := mt.ConvertHashBytesToString(message.Hash[:])
 	node := tree.GetNode(nodeHash)
 	if node.Type() != mt.DIRECTORY {
 		return mm.TuiError("The node is not a directory")
@@ -188,7 +236,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.TuiMessageBa
 	// ignoring issue of creating multiple coroutines here
 	responseChan := make(chan discoveredType, len(node.Children()))
 	for _, ch := range node.Children() {
-		go discoverNodeType(conn, message.FileInfo.Peer, ch.Hash(), tree, responseChan)
+		go discoverNodeType(conn, message.Peer, ch.Hash(), tree, responseChan)
 	}
 	for range node.Children() {
 		dscvType := <-responseChan
@@ -221,7 +269,7 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 
 	var mutex sync.Mutex
 	var data mm.TuiMessage
-	var err error
+	// var err error
 
 	peersTrees := map[string]mt.RemoteMerkleTree{}
 
@@ -252,7 +300,7 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 					// send a request to fetch data. Expected output is TuiMessage -> see expandFolder
 
 					// message.Payload().(BasicFolder) -> {Path: path, Peer: peer, Name: name, Hash: hash}
-					data = GetDirectoryContent(conn, message.Payload().(mm.TuiMessageBasicInfo), peersTrees, &mutex)
+					data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
 				}
 			case mm.DOWNLOAD:
 				{
@@ -262,15 +310,10 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 			case mm.SHOW_DATA:
 				{
 					// In this case we want discover user's file. So you have to sent RootRequest
-					// user = message.Payload().([]peer_conn.Peer)[0]
+					user := message.Payload().([]peer_conn.Peer)[0]
 					// Expected output is TuiMessage -> see expand Folder
-					// data = showFiles()
+					data = ReloadPeerContent(conn, user, peersTrees, &mutex)
 				}
-			}
-			if err != nil {
-				slog.Error("error when handling message", "type", message.RequestType())
-				tuiSender <- mm.ConvertErrorToTuiMessage(err)
-
 			}
 			if data != nil && !mm.IsEmpty(data) {
 				tuiSender <- data

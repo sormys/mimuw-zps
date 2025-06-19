@@ -130,7 +130,7 @@ func (hrm HelloReplyMsg) VerifySignature(publicKey *ecdsa.PublicKey) bool {
 // ========================RootRequestMsg===========================
 
 type RootRequestMsg struct {
-	SignedMessage
+	UnsignedMessage
 }
 
 func (rr RootRequestMsg) Type() networking.MessageType {
