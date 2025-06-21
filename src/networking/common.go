@@ -10,6 +10,25 @@ import (
 const WORKER_CHAN_BUF_SIZE = 1024
 const MAIN_CHAN_BUF_SIZE = 2048
 
+type stage = string
+
+const (
+	NOT_CONNECTED stage = "not connected"
+	CONNECT       stage = "connect"
+	PENDING       stage = "pending"
+)
+
+type Peer struct {
+	Addresses []net.Addr
+	Name      string
+	Key       encryption.Key
+	Stage     stage
+}
+
+func NewPeer(name string, addresses []net.Addr, key encryption.Key) Peer {
+	return Peer{Name: name, Addresses: addresses, Key: key}
+}
+
 type MessageType = string
 
 const (

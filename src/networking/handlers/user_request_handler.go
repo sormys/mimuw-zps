@@ -11,7 +11,6 @@ import (
 	mm "mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
-	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
 	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
@@ -20,13 +19,13 @@ import (
 )
 
 // Initiates communication with the peer whose addresses are provided
-func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickname string) mm.TuiMessage {
+func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickname string) mm.TuiMessage {
 	addresses := peer.Addresses
 	slog.Debug("Starting connection with peer", "nickname", peer.Name)
 	for _, addr := range addresses {
 		request := pmp.HelloMsg{
 			SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-			Extensions:    pmp.Extensions(peer_conn.GetExtensions()),
+			Extensions:    pmp.Extensions(pmp.GetExtensions()),
 			Name:          nickname,
 		}
 		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
@@ -51,7 +50,7 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 
 // reloads all files associated with the provided peer in message
 
-func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
+func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
 	receivedData, err := sendRootRequest(conn, peer)
 	if err != nil {
 		slog.Warn("Fail during sending root request", "error", err)
@@ -161,19 +160,6 @@ func ReloadAvailablePeers(server srv_conn.Server) mm.TuiMessage {
 	return mm.CreateListPeers(peers)
 }
 
-func DownloadFileFromPeer(conn packet_manager.PacketConn, message mm.BasicFileInfo) mm.TuiMessage {
-	// fileInfo := message.FileInfo
-	// receivedInfoDatum, err := sendDatumRequest(conn, fileInfo.Peer.Addresses, fileInfo.Hash)
-	// if !mm.IsEmpty(err) {
-	// 	return err
-	// }
-	// _ = receivedInfoDatum
-	//TODO
-	//manage received data and do something with them. Temporary dunno what
-
-	return mm.TuiInfo("Successfully downloaded data from user")
-}
-
 type discoveredType struct {
 	startHash string
 	hash      string
@@ -202,7 +188,7 @@ func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData
 	return discoveredType{hash: reqHash, err: errors.New("received unexpected reply from host")}
 }
 
-func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeHash string,
+func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, nodeHash string,
 	tree mt.RemoteMerkleTree, dscvChan chan<- discoveredType) {
 	startHash := nodeHash
 	hashBytes, err := mt.ConvertStringHashToBytes(nodeHash)
@@ -483,7 +469,7 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 			case mm.CONNECT:
 				{
 					// Expected output is peer when after successful handshake. You can use
-					data = StartConnection(conn, message.Payload().([]peer_conn.Peer)[0], nickname)
+					data = StartConnection(conn, message.Payload().([]networking.Peer)[0], nickname)
 				}
 			case mm.RELOAD_CONTENT:
 				{
@@ -509,7 +495,7 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 			case mm.SHOW_DATA:
 				{
 					// In this case we want discover user's file. So you have to sent RootRequest
-					user := message.Payload().([]peer_conn.Peer)[0]
+					user := message.Payload().([]networking.Peer)[0]
 					// Expected output is TuiMessage -> see expand Folder
 					data = ReloadPeerContent(conn, user, peersTrees, &mutex)
 				}

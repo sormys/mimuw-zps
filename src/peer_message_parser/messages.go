@@ -185,4 +185,8 @@ func (dr NoDatumMsg) Type() networking.MessageType {
 	return networking.NO_DATUM
 }
 
+func GetExtensions() Extensions {
+	return Extensions{0x00, 0x00, 0x00, 0x00}
+}
+
 // TODO(sormys) add NatTraversal messages

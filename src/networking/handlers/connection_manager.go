@@ -9,7 +9,6 @@ import (
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
-	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
 	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
@@ -40,7 +39,7 @@ func sendDatumRequest(conn packet_manager.PacketConn, addr []net.Addr, hash hand
 }
 
 // Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
-func sendRootRequest(conn packet_manager.PacketConn, peer peer_conn.Peer) (pmp.RootReplyMsg, error) {
+func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.RootReplyMsg, error) {
 	addr := peer.Addresses
 	for _, address := range addr {
 		request := pmp.RootRequestMsg{

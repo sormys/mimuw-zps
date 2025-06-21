@@ -10,7 +10,6 @@ import (
 	"mimuw_zps/src/networking"
 	cm "mimuw_zps/src/networking/handlers"
 	"mimuw_zps/src/networking/packet_manager"
-	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/networking/srv_conn"
 	"mimuw_zps/src/tui"
 	"net"
@@ -21,7 +20,7 @@ import (
 
 var nickname string
 
-func connect(peer peer_conn.Peer) message_manager.TuiMessage {
+func connect(peer networking.Peer) message_manager.TuiMessage {
 	return message_manager.InitConnectionMessage(peer)
 }
 

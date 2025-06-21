@@ -2,7 +2,7 @@ package message_manager
 
 import (
 	"mimuw_zps/src/handler"
-	"mimuw_zps/src/networking/peer_conn"
+	"mimuw_zps/src/networking"
 )
 
 type RequestTuiType = string
@@ -60,19 +60,19 @@ type TuiMessageFile struct {
 
 type TuiMessagePeers struct {
 	Notification RequestTuiType
-	Peers        []peer_conn.Peer
+	Peers        []networking.Peer
 }
 
 type BasicFileInfo struct {
 	Hash handler.Hash
-	Peer peer_conn.Peer
+	Peer networking.Peer
 }
 
 type BasicFolder struct {
 	Path string
 	Name string
 	Hash handler.Hash
-	Peer peer_conn.Peer
+	Peer networking.Peer
 }
 
 type ExpandFolderInfo struct {
@@ -117,14 +117,14 @@ func ConvertErrorsToTuiMessage(err []error) TuiMessage {
 	}
 }
 
-func CreateTuiMessageTypeBasicInfo(hash handler.Hash, peer peer_conn.Peer) TuiMessage {
+func CreateTuiMessageTypeBasicInfo(hash handler.Hash, peer networking.Peer) TuiMessage {
 	return &TuiMessageBasicInfo{
 		Notification: INFO_TUI,
 		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
 	}
 }
 
-func CreateListPeers(peers []peer_conn.Peer) TuiMessage {
+func CreateListPeers(peers []networking.Peer) TuiMessage {
 	return &TuiMessagePeers{
 		Notification: PEERS_TUI,
 		Peers:        peers,
@@ -153,17 +153,17 @@ func CreateEmptyMessageInfo() TuiMessage {
 	}
 }
 
-func InitConnectionMessage(peer peer_conn.Peer) TuiMessage {
+func InitConnectionMessage(peer networking.Peer) TuiMessage {
 	return &TuiMessagePeers{
 		Notification: CONNECT,
-		Peers:        []peer_conn.Peer{peer},
+		Peers:        []networking.Peer{peer},
 	}
 }
 
-func InitGetDataMessage(peer peer_conn.Peer) TuiMessage {
+func InitGetDataMessage(peer networking.Peer) TuiMessage {
 	return &TuiMessagePeers{
 		Notification: SHOW_DATA,
-		Peers:        []peer_conn.Peer{peer},
+		Peers:        []networking.Peer{peer},
 	}
 }
 
@@ -173,13 +173,13 @@ func CreateTuiFolders(folder TUIFolder) TuiMessage {
 		Folder:       folder,
 	}
 }
-func ExpandFolder(path string, peer peer_conn.Peer, name string, hash handler.Hash) TuiMessage {
+func ExpandFolder(path string, peer networking.Peer, name string, hash handler.Hash) TuiMessage {
 	return &ExpandFolderInfo{
 		Notification: EXPAND_FOLDER,
 		Info:         BasicFolder{Path: path, Peer: peer, Name: name, Hash: hash},
 	}
 }
-func DownloadFile(hash handler.Hash, peer peer_conn.Peer) TuiMessage {
+func DownloadFile(hash handler.Hash, peer networking.Peer) TuiMessage {
 	return &TuiMessageBasicInfo{
 		Notification: DOWNLOAD,
 		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
