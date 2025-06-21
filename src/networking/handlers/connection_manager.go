@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/handler"
+	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
@@ -85,14 +86,32 @@ func SendHelloReply(conn packet_manager.PacketConn, data networking.ReceivedMess
 	return nil
 }
 
-// TODO
-// Respond to request for our data
 func SendData(conn packet_manager.PacketConn, data networking.ReceivedMessageData) error {
+	// hash := nil
+	// datum, ok := merkle_tree.GetHashContent(hash)
+	// if !ok {
+	// 	request := pmp.NoDatumMsg{
+	// 		SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+	// 		Hash:          hash,
+	// 	}
+	// 	conn.SendReply(data.Addr, pmp.EncodeMessage(request))
+	// } else {
+	// 	// I need to consider what to send
+	// 	// request := pmp.DatumMsg{
+	// 	// 	UnsignedMessage: pmp.NewEmtpyUnsignedMessage(utility.GenerateID()),
+	// 	// 	Hash:            hash,
+	// 	// }
+	// 	// conn.SendReply(data.Addr, pmp.EncodeMessage(request))
+	// }
 	return nil
 }
 
-// TODO
-// Respond to request for our hash
 func SendRootReply(conn packet_manager.PacketConn, data networking.ReceivedMessageData) error {
+	root := merkle_tree.GetRoot()
+	request := pmp.RootReplyMsg{
+		SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+		Hash:          root,
+	}
+	conn.SendReply(data.Addr, pmp.EncodeMessage(request))
 	return nil
 }
