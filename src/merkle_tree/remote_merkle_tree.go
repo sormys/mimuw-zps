@@ -202,7 +202,7 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsBig(
 	nodeHash string,
-	childrenHashes [][]byte) error {
+	children DirectoryRecords) error {
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -214,17 +214,14 @@ func (rmt *RemoteMerkleTree) DiscoverAsBig(
 		return errors.New("this node already has children, cannot convert to big node")
 	}
 
-	hash := sha256.New()
-	for _, chHash := range childrenHashes {
-		hash.Write(chHash)
-	}
-	hashStr := ConvertHashToString(hash)
+	hash := sha256.Sum256(children.Raw)
+	hashStr := ConvertHashBytesToString(hash[:])
 	if hashStr != node.hash {
 		return errors.New("invalid children (hashes do not match)")
 	}
-	newChildren := make([]*RemoteNode, len(childrenHashes))
-	for i, chHash := range childrenHashes {
-		strHash := ConvertHashBytesToString(chHash)
+	newChildren := make([]*RemoteNode, len(children.Records))
+	for i, ch := range children.Records {
+		strHash := ConvertHashBytesToString(ch.Hash)
 		newChildren[i] = &RemoteNode{hash: strHash,
 			parent: node, nodeType: NO_TYPE}
 		rmt.nodeMap[strHash] = newChildren[i]

@@ -208,18 +208,14 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 			dscvChan <- dscvType
 			return
 		}
-		childrenHashes := make([][]byte, len(dscvType.msg.Children.Records))
-		for i, ch := range dscvType.msg.Children.Records {
-			childrenHashes[i] = ch.Hash
-		}
 		// If there would be no children this would fail
-		err = tree.DiscoverAsBig(nodeHash, childrenHashes)
+		err = tree.DiscoverAsBig(nodeHash, dscvType.msg.Children)
 		if err != nil {
 			dscvChan <- dscvType
 			return
 		}
-		nodeHash = mt.ConvertHashBytesToString(childrenHashes[0])
-		hashBytes = childrenHashes[0]
+		hashBytes = dscvType.msg.Children.Records[0].Hash
+		nodeHash = mt.ConvertHashBytesToString(hashBytes)
 	}
 }
 
