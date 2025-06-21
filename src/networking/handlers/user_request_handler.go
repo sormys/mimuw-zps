@@ -1,6 +1,7 @@
 package connection_manager
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"mimuw_zps/src/encryption"
@@ -14,6 +15,7 @@ import (
 	"mimuw_zps/src/networking/srv_conn"
 	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
+	"os"
 	"sync"
 )
 
@@ -272,7 +274,7 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 	for _, child := range node.Children() {
 		childHash := child.Hash()
 		ch := make(chan discoveredType, 1)
-		go discoverNodeType(conn, message.Peer, childHash, tree, ch)
+		discoverNodeType(conn, message.Peer, childHash, tree, ch)
 		childType := <-ch
 		if childType.err != nil {
 			slog.Warn("Error discovering child node type", "peer", message.Peer.Name, "childHash", childHash, "err", childType.err)
@@ -285,8 +287,12 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 			if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
 				return subfolders, files, err
 			}
+			nodeHashBytes, err := mt.ConvertStringHashToBytes(childType.startHash)
+			if err != nil {
+				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
+			}
 			folder := mm.TUIFolder{
-				Hash:       childType.msg.Hash,
+				Hash:       handler.Hash(nodeHashBytes),
 				Name:       child.Name(),
 				Path:       path + "/" + child.Name(),
 				Files:      nil,
@@ -300,8 +306,12 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 			if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
 				return subfolders, files, err
 			}
+			nodeHashBytes, err := mt.ConvertStringHashToBytes(childType.startHash)
+			if err != nil {
+				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
+			}
 			file := handler.File{
-				Hash: childType.msg.Hash,
+				Hash: handler.Hash(nodeHashBytes),
 				Name: child.Name(),
 				Path: path + "/" + child.Name(),
 			}
@@ -310,6 +320,7 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 	}
 	return subfolders, files, nil
 }
+
 func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
 
@@ -344,6 +355,115 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	}
 	return message_manager.CreateTuiFolders(folder)
 	// TODO(sormys) Gather types and send the info using standard inteface
+}
+
+func downloadSubtreeHelper(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	tree mt.RemoteMerkleTree, nodeHash string) []byte {
+	if node := tree.GetNode(nodeHash); node != nil && node.Type() != mt.NO_TYPE {
+		slog.Debug("Cache hit")
+		if node.IsDir() {
+			return nil
+		}
+		if node.Type() == mt.CHUNK {
+			return node.Data()
+		}
+		if node.Type() != mt.BIG {
+			return nil
+		}
+		var data bytes.Buffer
+		for _, ch := range node.Children() {
+			chData := downloadSubtreeHelper(conn, message, tree, ch.Hash())
+			if chData == nil {
+				return nil
+			}
+			data.Write(chData)
+		}
+		return data.Bytes()
+	}
+	slog.Debug("No Cache")
+
+	nodeBytes, err := mt.ConvertStringHashToBytes(nodeHash)
+	if err != nil {
+		slog.Warn("failed to convert")
+		return nil
+	}
+	request := pmp.DatumRequestMsg{
+		UnsignedMessage: pmp.NewEmtpyUnsignedMessage(utility.GenerateID()),
+		Hash:            handler.Hash(nodeBytes),
+	}
+	// FIXME(sormys) send to all addresses, check if any address available
+	data := conn.SendRequest(message.Peer.Addresses[0], pmp.EncodeMessage(request),
+		networking.NewRetryPolicyRequest())
+
+	if data.Err != nil {
+		slog.Warn("Error while receiving reply", "err", data.Err)
+		return nil
+	}
+	dscvType := decodeDatumResponse(nodeHash, data)
+	if dscvType.err != nil {
+		slog.Warn("Error while decoding datum response", "err", dscvType.err)
+		return nil
+	}
+	if dscvType.msg.NodeType == mt.CHUNK {
+		if err := tree.DiscoverAsChunk(nodeHash, dscvType.msg.Data); err != nil {
+			slog.Warn("Error while discovering as chunk", "err", err)
+			return nil
+		}
+		return dscvType.msg.Data
+	}
+	if dscvType.msg.NodeType == mt.DIRECTORY {
+		return nil
+	}
+	// dscvType.msg.NodeType == mt.BIG
+	if err := tree.DiscoverAsBig(nodeHash, dscvType.msg.Children); err != nil {
+		return nil
+	}
+	var fileData bytes.Buffer
+	for _, ch := range dscvType.msg.Children.Records {
+		chData := downloadSubtreeHelper(conn, message, tree, mt.ConvertHashBytesToString(ch.Hash))
+		if chData == nil {
+			return nil
+		}
+		fileData.Write(chData)
+	}
+	return fileData.Bytes()
+}
+
+func downloadSubtree(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	tree mt.RemoteMerkleTree, nodeHash string, dataCh chan []byte) {
+	dataCh <- downloadSubtreeHelper(conn, message, tree, nodeHash)
+}
+
+func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
+	treeMutex.Lock()
+	defer treeMutex.Unlock()
+	tree, exist := peersTrees[message.Peer.Name]
+	if !exist {
+		return mm.TuiError("No tree for given peer")
+	}
+	nodeHash := mt.ConvertHashBytesToString(message.Hash[:])
+	node := tree.GetNode(nodeHash)
+	if node == nil {
+		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
+	}
+	if !node.IsFile() {
+		return mm.TuiError("The node is not a File")
+	}
+	slog.Info("Downloading file started")
+	data := downloadSubtreeHelper(conn, message, tree, nodeHash)
+	if data == nil {
+		return mm.TuiError("Failed to download file data")
+	}
+
+	// Save data to tmp.tmp file
+	err := os.WriteFile("tmp.tmp", data, 0644)
+	if err != nil {
+		return mm.TuiError("Failed to save file: " + err.Error())
+	}
+
+	slog.Debug("File saved successfully", "filename", "tmp.tmp", "size", len(data))
+	return mm.TuiInfo("File downloaded and saved as tmp.tmp")
 }
 
 func RunUserRequestHandler(conn packet_manager.PacketConn,
@@ -383,7 +503,7 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 				}
 			case mm.DOWNLOAD:
 				{
-					data = DownloadFileFromPeer(conn, message.Payload().(mm.BasicFileInfo))
+					data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
 				}
 
 			case mm.SHOW_DATA:

@@ -26,7 +26,7 @@ func NewRetryPolicyRequest() *RetryPolicyRequest {
 	return &RetryPolicyRequest{retryCount: 2}
 }
 
-func (rp RetryPolicyHandshake) NextRetry() (time.Duration, error) {
+func (rp *RetryPolicyHandshake) NextRetry() (time.Duration, error) {
 	rp.retryCount++
 	if rp.retryCount > rp.retryLimit {
 		return time.Second, errors.New("no more retries")
@@ -39,7 +39,7 @@ type RetryPolicyRequest struct {
 	retryLimit int
 }
 
-func (rp RetryPolicyRequest) NextRetry() (time.Duration, error) {
+func (rp *RetryPolicyRequest) NextRetry() (time.Duration, error) {
 	rp.retryCount++
 	if rp.retryCount > rp.retryLimit {
 		return time.Second, errors.New("no more retries")
