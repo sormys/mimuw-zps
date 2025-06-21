@@ -6,6 +6,7 @@ import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/handler"
 	mt "mimuw_zps/src/merkle_tree"
+	"mimuw_zps/src/message_manager"
 	mm "mimuw_zps/src/message_manager"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
@@ -49,7 +50,6 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 // reloads all files associated with the provided peer in message
 
 func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
-	slog.Info("Reloading peer content", "nickname", peer.Name)
 	receivedData, err := sendRootRequest(conn, peer)
 	if err != nil {
 		slog.Warn("Fail during sending root request", "error", err)
@@ -60,7 +60,6 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peer
 	tree := mt.NewRemoteMerkleTree(hash)
 	ch := make(chan discoveredType, 1)
 
-	slog.Debug("Trying to discover root type", "peer", peer.Name)
 	discoverNodeType(conn, peer, hash, tree, ch)
 
 	dscvType := <-ch
@@ -74,22 +73,65 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peer
 			"peer", peer.Name, "err", err)
 		return mm.ConvertErrorToTuiMessage(err)
 	}
+	subfolders := []mm.TUIFolder{}
+	files := []handler.File{}
 	if dscvType.msg.NodeType == mt.DIRECTORY {
-		//jestem folderem
-		slog.Debug("Root of peer is a directory", "peer", peer.Name, "hash", dscvType.hash)
 		if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
 			return mm.TuiError(err.Error())
 		}
+
+		for _, child := range dscvType.msg.Children.Records {
+			childHash := mt.ConvertHashBytesToString(child.Hash)
+			ch := make(chan discoveredType, 1)
+			discoverNodeType(conn, peer, childHash, tree, ch)
+			childType := <-ch
+			if childType.err != nil {
+				slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", childHash, "err", childType.err)
+				return mm.TuiError(childType.err.Error())
+			}
+			if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
+				continue
+			}
+			if childType.msg.NodeType == mt.DIRECTORY {
+				if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
+					return mm.TuiError(err.Error())
+				}
+				folder := mm.TUIFolder{
+					Hash:       childType.msg.Hash,
+					Name:       child.Name,
+					Path:       "root/" + child.Name,
+					Files:      []handler.File{},
+					Subfolders: nil,
+					Loaded:     false,
+					Expanded:   false,
+				}
+				subfolders = append(subfolders, folder)
+			}
+			if childType.msg.NodeType == mt.CHUNK {
+				if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
+					return mm.TuiError(err.Error())
+				}
+				file := handler.File{
+					Hash: childType.msg.Hash,
+					Name: child.Name,
+					Path: "root/" + child.Name,
+				}
+				files = append(files, file)
+			}
+		}
 	}
+	//how to get name of file when root is only one file ?
 	if dscvType.msg.NodeType == mt.CHUNK {
-		// jestem plikiem
-		slog.Debug("Root of peer is a file", "peer", peer.Name)
+		file := handler.File{
+			Hash: dscvType.msg.Hash,
+			Name: "pliczek",
+			Path: "root/" + "pliczek",
+		}
+		files = append(files, file)
 		if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
 			return mm.TuiError(dscvType.err.Error())
 		}
 	}
-	//czy root jest plikiem zcy folderem
-
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -98,8 +140,8 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peer
 		Hash:       handler.Hash{},
 		Name:       "root",
 		Path:       "root",
-		Files:      nil,
-		Subfolders: nil,
+		Files:      files,
+		Subfolders: subfolders,
 		Loaded:     false,
 		Expanded:   false,
 	}
@@ -117,17 +159,17 @@ func ReloadAvailablePeers(server srv_conn.Server) mm.TuiMessage {
 	return mm.CreateListPeers(peers)
 }
 
-func DownloadFileFromPeer(conn packet_manager.PacketConn, message mm.TuiMessageBasicInfo) mm.TuiMessage {
-	fileInfo := message.FileInfo
-	receivedInfoDatum, err := sendDatumRequest(conn, fileInfo.Peer.Addresses, fileInfo.Hash)
-	if !mm.IsEmpty(err) {
-		return err
-	}
-	_ = receivedInfoDatum
+func DownloadFileFromPeer(conn packet_manager.PacketConn, message mm.BasicFileInfo) mm.TuiMessage {
+	// fileInfo := message.FileInfo
+	// receivedInfoDatum, err := sendDatumRequest(conn, fileInfo.Peer.Addresses, fileInfo.Hash)
+	// if !mm.IsEmpty(err) {
+	// 	return err
+	// }
+	// _ = receivedInfoDatum
 	//TODO
 	//manage received data and do something with them. Temporary dunno what
 
-	return mm.TuiInfo("Successfully downloaded data from " + fileInfo.Peer.Name + "")
+	return mm.TuiInfo("Successfully downloaded data from user")
 }
 
 type discoveredType struct {
@@ -197,6 +239,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 		// FIXME(sormys) send to all addresses, check if any address available
 		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
 			networking.NewRetryPolicyRequest())
+
 		if data.Err != nil {
 			dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: data.Err}
 			return
@@ -218,9 +261,58 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 		nodeHash = mt.ConvertHashBytesToString(hashBytes)
 	}
 }
+func getFoldersAndFiles(node *mt.RemoteNode,
+	message mm.BasicFolder,
+	path string,
+	tree mt.RemoteMerkleTree,
+	conn packet_manager.PacketConn) ([]mm.TUIFolder, []handler.File, error) {
 
+	subfolders := []mm.TUIFolder{}
+	files := []handler.File{}
+	for _, child := range node.Children() {
+		childHash := child.Hash()
+		ch := make(chan discoveredType, 1)
+		go discoverNodeType(conn, message.Peer, childHash, tree, ch)
+		childType := <-ch
+		if childType.err != nil {
+			slog.Warn("Error discovering child node type", "peer", message.Peer.Name, "childHash", childHash, "err", childType.err)
+			return subfolders, files, childType.err
+		}
+		if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
+			continue
+		}
+		if childType.msg.NodeType == mt.DIRECTORY {
+			if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
+				return subfolders, files, err
+			}
+			folder := mm.TUIFolder{
+				Hash:       childType.msg.Hash,
+				Name:       child.Name(),
+				Path:       path + "/" + child.Name(),
+				Files:      nil,
+				Subfolders: nil,
+				Loaded:     false,
+				Expanded:   false,
+			}
+			subfolders = append(subfolders, folder)
+		}
+		if childType.msg.NodeType == mt.CHUNK {
+			if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
+				return subfolders, files, err
+			}
+			file := handler.File{
+				Hash: childType.msg.Hash,
+				Name: child.Name(),
+				Path: path + "/" + child.Name(),
+			}
+			files = append(files, file)
+		}
+	}
+	return subfolders, files, nil
+}
 func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
+
 	treeMutex.Lock()
 	defer treeMutex.Unlock()
 	tree, exist := peersTrees[message.Peer.Name]
@@ -237,32 +329,21 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	}
 	// FIXME(sormys) this should probably be an option in packet manager, for now,
 	// ignoring issue of creating multiple coroutines here
-	responseChan := make(chan discoveredType, len(node.Children()))
-	for _, ch := range node.Children() {
-		go discoverNodeType(conn, message.Peer, ch.Hash(), tree, responseChan)
+	// responseChan := make(chan discoveredType, len(node.Children()))
+	subfolders, files, err := getFoldersAndFiles(node, message, message.Path, tree, conn)
+	if err != nil {
+		return mm.TuiError(err.Error())
 	}
-	for range node.Children() {
-		dscvType := <-responseChan
-		if dscvType.err != nil {
-			return mm.TuiError(dscvType.err.Error())
-		}
-		if dscvType.cacheType == mt.DIRECTORY || dscvType.cacheType == mt.CHUNK {
-			break
-		}
-		if dscvType.msg.NodeType == mt.DIRECTORY {
-			if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
-				return mm.TuiError(dscvType.err.Error())
-			}
-		}
-		if dscvType.msg.NodeType == mt.CHUNK {
-			if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
-				return mm.TuiError(dscvType.err.Error())
-			}
-		}
+	folder := message_manager.TUIFolder{
+		Name:       message.Name,
+		Path:       message.Path,
+		Files:      files,
+		Subfolders: subfolders,
+		Loaded:     true,
+		Expanded:   true,
 	}
-	slog.Debug("JESTEM W GET DIRECTORY CONTENT")
+	return message_manager.CreateTuiFolders(folder)
 	// TODO(sormys) Gather types and send the info using standard inteface
-	return mm.TuiInfo("Correctly discovered the type")
 }
 
 func RunUserRequestHandler(conn packet_manager.PacketConn,
@@ -282,10 +363,6 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 			case mm.CONNECT:
 				{
 					// Expected output is peer when after successful handshake. You can use
-					// message_manager.InitConnectionMessage(peer)
-
-					//data = connect(message.Payload().([]peer_conn.Peer)[0])
-					//data = connection_manager.StartConnection(conn, message.Payload().([]peer_conn.Peer)[0], nickname)
 					data = StartConnection(conn, message.Payload().([]peer_conn.Peer)[0], nickname)
 				}
 			case mm.RELOAD_CONTENT:
@@ -302,12 +379,11 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 					// Check if the contents are available in the cache. If not,
 					// send a request to fetch data. Expected output is TuiMessage -> see expandFolder
 
-					// message.Payload().(BasicFolder) -> {Path: path, Peer: peer, Name: name, Hash: hash}
 					data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
 				}
 			case mm.DOWNLOAD:
 				{
-					data = DownloadFileFromPeer(conn, message.Payload().(mm.TuiMessageBasicInfo))
+					data = DownloadFileFromPeer(conn, message.Payload().(mm.BasicFileInfo))
 				}
 
 			case mm.SHOW_DATA:

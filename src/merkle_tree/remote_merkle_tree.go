@@ -130,6 +130,7 @@ func (rmt *RemoteMerkleTree) GetNode(hash string) *RemoteNode {
 // if provided data is correct in merkle tree. If error occurs,
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error {
+
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -141,8 +142,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 	if data == nil {
 		return errors.New("chunk cannot have nil data")
 	}
-	expectedHash := hashData([][]byte{data})
-	if expectedHash != nodeHash {
+	expectedHash := hashData([][]byte{{0x00}, data})
+	if expectedHash != node.hash {
 		return errors.New("invalid data (hashes do not match)")
 	}
 	if node.parent != nil {

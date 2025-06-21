@@ -155,13 +155,6 @@ func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
 	case message_manager.FOLDER_TUI:
 		data := message.Payload().(message_manager.TUIFolder)
 		folder := findFolder(&m.root, data.Path)
-		zeroHash := handler.Hash{}
-		if folder.Path == "root" && folder.Hash == zeroHash {
-			folder.Hash = data.Hash
-			m.buildVisible()
-			m.state = FOLDER
-			break
-		}
 		if folder != nil {
 			folder.Files = data.Files
 			folder.Subfolders = data.Subfolders

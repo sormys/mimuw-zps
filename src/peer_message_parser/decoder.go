@@ -254,7 +254,7 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 	switch msg.Data[handler.HASH_LENGTH] {
 	case 0x0:
 		// CHUNK
-		if msg.Length > MAX_CHUNK_SIZE+1 {
+		if msg.Length-handler.HASH_LENGTH > MAX_CHUNK_SIZE+1 {
 			return DatumMsg{}, decoderError("chunk data too big")
 		}
 		nodeType = merkle_tree.CHUNK
@@ -278,23 +278,23 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 		}
 		nodeType = merkle_tree.DIRECTORY
 		children = records
-	case 0x03:
+	case 0x03, 0x02:
 		// BIG
 		recordsRawLen := (msg.Length - 1 - handler.HASH_LENGTH)
 		recordsCount := recordsRawLen / BIG_ENTRY_SIZE
-		if recordsRawLen%BIG_ENTRY_SIZE != 0 || recordsCount > BIG_MAX_ENTRIES || recordsCount < BIG_MIN_ENTRY_SIZE {
+		if recordsRawLen%BIG_ENTRY_SIZE != 0 || recordsCount > BIG_ENTRY_SIZE || recordsCount < BIG_MIN_ENTRY_SIZE {
 			return DatumMsg{}, decoderError("big node children are of incorrect length")
 		}
 		records := make([]merkle_tree.DirectoryRecord, recordsCount)
 		recordStart := 1 + handler.HASH_LENGTH
-		for i := range recordsCount {
+		for i := 0; i < int(recordsCount); i++ {
 			records[i] = merkle_tree.DirectoryRecord{Hash: msg.Data[recordStart : recordStart+BIG_ENTRY_SIZE]}
 			recordStart += BIG_ENTRY_SIZE
 		}
 		nodeType = merkle_tree.BIG
 		children = records
 	default:
-		slog.Warn("Invalid node type in response", "type", msg.Data[0], "msg", msg)
+		slog.Warn("Invalid node type in response", "type", msg.Data[handler.HASH_LENGTH], "msg", msg)
 		return DatumMsg{}, errors.New("invalid node type in response")
 	}
 
