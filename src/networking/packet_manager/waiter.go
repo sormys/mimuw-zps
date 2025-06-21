@@ -91,7 +91,7 @@ func handleRetryRequest(request networking.SendRequest, retryHeap *TaskHeap,
 		return
 	}
 
-	slog.Debug("Received retry request", "request", request)
+	slog.Debug("Received retry request", "addr", request.Addr, "mess id", utility.GetMessageID(request.Message))
 	id := utility.GetMessageID(request.Message)
 	task, err := createRetryTask(&request, id)
 	if err != nil {
@@ -146,7 +146,6 @@ func handleRetryDeadlinePassed(retryHeap *TaskHeap,
 	minRetry = retryHeap.Pop().(retryTask)
 	status, exists := messagesMap[minRetry.sendRequestId]
 	if !exists {
-		slog.Info("Deadline passed for request but no request was found in the retry map")
 		return
 	}
 	if (*status.sendRequest).CallbackChan != nil {

@@ -153,7 +153,7 @@ func encodeDatumMsg(msg DatumMsg) []byte {
 
 	case merkle_tree.DIRECTORY:
 		dataBytes = []byte{0x01}
-		for _, child := range msg.Children {
+		for _, child := range msg.Children.Records {
 			nameBytes := make([]byte, DIR_HALF_ENTRY)
 			copy(nameBytes, []byte(child.Name))
 			dataBytes = append(dataBytes, nameBytes...)
@@ -162,7 +162,7 @@ func encodeDatumMsg(msg DatumMsg) []byte {
 
 	case merkle_tree.BIG:
 		dataBytes = []byte{0x03}
-		for _, child := range msg.Children {
+		for _, child := range msg.Children.Records {
 			dataBytes = append(dataBytes, child.Hash...)
 		}
 

@@ -19,10 +19,11 @@ import (
 // Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickname string) mm.TuiMessage {
 	addresses := peer.Addresses
+	slog.Debug("Starting connection with peer", "nickname", peer.Name)
 	for _, addr := range addresses {
 		request := pmp.HelloMsg{
 			SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-			Extensions:    pmp.Extensions{},
+			Extensions:    pmp.Extensions(peer_conn.GetExtensions()),
 			Name:          nickname,
 		}
 		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
@@ -39,7 +40,6 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 				return mm.TuiError("Invalid hello reply signature")
 			}
 			return mm.InitConnectionMessage(peer)
-			// return mm.TuiInfo("Successfully connected to address " + addr.String())
 		}
 	}
 
@@ -49,8 +49,10 @@ func StartConnection(conn packet_manager.PacketConn, peer peer_conn.Peer, nickna
 // reloads all files associated with the provided peer in message
 
 func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
+	slog.Info("Reloading peer content", "nickname", peer.Name)
 	receivedData, err := sendRootRequest(conn, peer)
 	if err != nil {
+		slog.Warn("Fail during sending root request", "error", err)
 		return mm.ConvertErrorToTuiMessage(err)
 	}
 
@@ -58,38 +60,40 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peer
 	tree := mt.NewRemoteMerkleTree(hash)
 	ch := make(chan discoveredType, 1)
 
+	slog.Debug("Trying to discover root type", "peer", peer.Name)
 	discoverNodeType(conn, peer, hash, tree, ch)
 
 	dscvType := <-ch
 
 	if dscvType.err != nil {
+		slog.Warn("Error while trying to discover root type", "peer", peer.Name, "err", dscvType.err)
 		return mm.TuiError(dscvType.err.Error())
 	}
 	if dscvType.cacheType == mt.DIRECTORY || dscvType.cacheType == mt.CHUNK {
+		slog.Debug("Invalid read from cache - there should not be a cache hit during content reload",
+			"peer", peer.Name, "err", err)
 		return mm.ConvertErrorToTuiMessage(err)
 	}
 	if dscvType.msg.NodeType == mt.DIRECTORY {
 		//jestem folderem
+		slog.Debug("Root of peer is a directory", "peer", peer.Name, "hash", dscvType.hash)
 		if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
-			return mm.TuiError(dscvType.err.Error())
+			return mm.TuiError(err.Error())
 		}
 	}
 	if dscvType.msg.NodeType == mt.CHUNK {
 		// jestem plikiem
+		slog.Debug("Root of peer is a file", "peer", peer.Name)
 		if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
 			return mm.TuiError(dscvType.err.Error())
 		}
 	}
-
 	//czy root jest plikiem zcy folderem
 
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	peersTrees[peer.Name] = tree
-
-	// slog.Debug("ReloadPeerContent result", "data", data)
-
 	folder := mm.TUIFolder{
 		Hash:       handler.Hash{},
 		Name:       "root",
@@ -101,7 +105,6 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer peer_conn.Peer, peer
 	}
 
 	return mm.CreateTuiFolders(folder)
-	// return mm.CreateTuiMessageTypeBasicInfo(getHashFromRootReply(receivedData), peer)
 
 }
 
@@ -145,6 +148,7 @@ func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData
 		return discoveredType{hash: reqHash, err: errors.New("no data for given hash")}
 	case pmp.DatumMsg:
 		if mt.ConvertHashBytesToString(msg.Hash[:]) != reqHash {
+			slog.Error("not matching hashes:", "got", msg.Hash, "expected", reqHash)
 			return discoveredType{hash: reqHash, err: errors.New("received hash do not match")}
 		}
 		return discoveredType{hash: reqHash, msg: msg, err: nil}
@@ -164,7 +168,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 	}
 	for {
 		// Check if we have it already in the tree - cache
-		if node := tree.GetNode(nodeHash); node != nil {
+		if node := tree.GetNode(nodeHash); node != nil && node.Type() != mt.NO_TYPE {
 			if node.IsDir() {
 				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.DIRECTORY}
 				return
@@ -204,8 +208,8 @@ func discoverNodeType(conn packet_manager.PacketConn, peer peer_conn.Peer, nodeH
 			dscvChan <- dscvType
 			return
 		}
-		childrenHashes := make([][]byte, len(dscvType.msg.Children))
-		for i, ch := range dscvType.msg.Children {
+		childrenHashes := make([][]byte, len(dscvType.msg.Children.Records))
+		for i, ch := range dscvType.msg.Children.Records {
 			childrenHashes[i] = ch.Hash
 		}
 		// If there would be no children this would fail
@@ -229,6 +233,9 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	}
 	nodeHash := mt.ConvertHashBytesToString(message.Hash[:])
 	node := tree.GetNode(nodeHash)
+	if node == nil {
+		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
+	}
 	if node.Type() != mt.DIRECTORY {
 		return mm.TuiError("The node is not a directory")
 	}

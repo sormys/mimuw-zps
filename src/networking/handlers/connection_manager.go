@@ -51,7 +51,6 @@ func sendRootRequest(conn packet_manager.PacketConn, peer peer_conn.Peer) (pmp.R
 		if err != nil {
 			return pmp.RootReplyMsg{}, err
 		}
-		slog.Debug("Decoded message", "msg", decoded)
 		switch msg := decoded.(type) {
 		case pmp.ErrorMsg:
 			return pmp.RootReplyMsg{}, errors.New(msg.Message)
@@ -59,7 +58,7 @@ func sendRootRequest(conn packet_manager.PacketConn, peer peer_conn.Peer) (pmp.R
 			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
 				return pmp.RootReplyMsg{}, errors.New("incorrect verify signature")
 			}
-			// return pmp.RootReplyMsg{Hash: handler.Hash(receivedData.Data[:32])}, nil
+			return msg, nil
 		}
 	}
 	return pmp.RootReplyMsg{}, errors.New("none of peers responds")

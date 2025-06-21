@@ -3,6 +3,7 @@ package merkle_tree
 import (
 	"crypto/sha256"
 	"errors"
+	"log/slog"
 )
 
 // This tree is most likely not complete, and is constructed by adding nodes
@@ -161,7 +162,7 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	nodeHash string,
-	children []DirectoryRecordRaw) error {
+	children DirectoryRecords) error {
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -173,12 +174,10 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 		return errors.New("this node already has children, cannot convert to directory node")
 	}
 
-	hash := sha256.New()
-	for _, ch := range children {
-		hash.Write(ch.Hash)
-	}
-	hashStr := ConvertHashToString(hash)
+	hash := sha256.Sum256(children.Raw)
+	hashStr := ConvertHashBytesToString(hash[:])
 	if hashStr != node.hash {
+		slog.Error("failed to verify hashes:", "requested", nodeHash, "children", children, "got", hashStr)
 		return errors.New("invalid children (hashes do not match)")
 	}
 	if node.parent != nil {
@@ -186,8 +185,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 			return err
 		}
 	}
-	newChildren := make([]*RemoteNode, len(children))
-	for i, ch := range children {
+	newChildren := make([]*RemoteNode, len(children.Records))
+	for i, ch := range children.Records {
 		hashStr := ConvertHashBytesToString(ch.Hash)
 		newChildren[i] = &RemoteNode{name: ch.Name, parent: node,
 			hash: ConvertHashBytesToString(ch.Hash), nodeType: NO_TYPE}

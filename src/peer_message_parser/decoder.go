@@ -2,6 +2,7 @@ package peer_message_parser
 
 import (
 	"errors"
+	"log/slog"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/handler"
 	"mimuw_zps/src/merkle_tree"
@@ -46,7 +47,7 @@ func DecodeMessage(msg networking.ReceivedMessageData) (PeerMessage, error) {
 	case networking.NO_DATUM:
 		return decodeNoDatumMsg(msg)
 	}
-	return nil, decoderError("unknown message type")
+	return nil, decoderError("unknown message type: " + msg.MessType)
 }
 
 // ===========================BaseMessage===========================
@@ -199,6 +200,7 @@ func decodeRootReplyMsg(msg networking.ReceivedMessageData) (RootReplyMsg, error
 	if err != nil {
 		return RootReplyMsg{}, err
 	}
+	slog.Debug("Root hash bytes", "hash", []byte(msg.Data[:handler.HASH_LENGTH]))
 	return RootReplyMsg{
 		SignedMessage: newSignedMessage(msg, signature),
 		Hash:          handler.Hash(msg.Data[:handler.HASH_LENGTH]),
@@ -248,47 +250,52 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 	hash := handler.Hash(msg.Data[:handler.HASH_LENGTH])
 	var nodeType merkle_tree.NodeType
 	var data []byte
-	var children []merkle_tree.DirectoryRecordRaw
-	switch msg.Data[0] {
+	var children []merkle_tree.DirectoryRecord
+	switch msg.Data[handler.HASH_LENGTH] {
 	case 0x0:
 		// CHUNK
 		if msg.Length > MAX_CHUNK_SIZE+1 {
 			return DatumMsg{}, decoderError("chunk data too big")
 		}
 		nodeType = merkle_tree.CHUNK
-		data = msg.Data[1:]
+		data = msg.Data[1+handler.HASH_LENGTH:]
 	case 0x01:
+		dirEntriesLen := msg.Length - 1 - handler.HASH_LENGTH
 		// DIRECTORY
-		if (msg.Length-1)%DIR_ENTRY_SIZE != 0 || (msg.Length-1)/DIR_ENTRY_SIZE > DIR_MAX_ENTRIES {
+		if dirEntriesLen%DIR_ENTRY_SIZE != 0 || dirEntriesLen/DIR_ENTRY_SIZE > DIR_MAX_ENTRIES {
 			return DatumMsg{}, decoderError("directory entires are of incorrect length")
 		}
-		records := make([]merkle_tree.DirectoryRecordRaw, (msg.Length-1)/DIR_ENTRY_SIZE)
-		recordStart := 1
+		records := make([]merkle_tree.DirectoryRecord, dirEntriesLen/DIR_ENTRY_SIZE)
+		recordStart := handler.HASH_LENGTH + 1
 		for i := range len(records) {
 			n, err := getNameFromBytes([DIR_HALF_ENTRY]byte(msg.Data[recordStart : recordStart+DIR_HALF_ENTRY]))
 			if err != nil {
 				return DatumMsg{}, decoderError(err.Error())
 			}
 			h := msg.Data[recordStart+DIR_HALF_ENTRY : recordStart+DIR_ENTRY_SIZE]
-			records[i] = merkle_tree.DirectoryRecordRaw{Name: n, Hash: h}
-			recordStart += 64
+			records[i] = merkle_tree.DirectoryRecord{Name: n, Hash: h}
+			recordStart += DIR_ENTRY_SIZE
 		}
 		nodeType = merkle_tree.DIRECTORY
 		children = records
 	case 0x03:
 		// BIG
-		recordsLen := (msg.Length - 1) / BIG_ENTRY_SIZE
-		if (msg.Length-1)%BIG_ENTRY_SIZE != 0 || recordsLen > BIG_MAX_ENTRIES || recordsLen < BIG_MIN_ENTRY_SIZE {
+		recordsRawLen := (msg.Length - 1 - handler.HASH_LENGTH)
+		recordsCount := recordsRawLen / BIG_ENTRY_SIZE
+		if recordsRawLen%BIG_ENTRY_SIZE != 0 || recordsCount > BIG_MAX_ENTRIES || recordsCount < BIG_MIN_ENTRY_SIZE {
 			return DatumMsg{}, decoderError("big node children are of incorrect length")
 		}
-		records := make([]merkle_tree.DirectoryRecordRaw, recordsLen)
-		recordStart := 1
-		for i := range recordsLen {
-			records[i] = merkle_tree.DirectoryRecordRaw{Hash: msg.Data[recordStart : recordStart+BIG_ENTRY_SIZE]}
+		records := make([]merkle_tree.DirectoryRecord, recordsCount)
+		recordStart := 1 + handler.HASH_LENGTH
+		for i := range recordsCount {
+			records[i] = merkle_tree.DirectoryRecord{Hash: msg.Data[recordStart : recordStart+BIG_ENTRY_SIZE]}
 			recordStart += BIG_ENTRY_SIZE
 		}
 		nodeType = merkle_tree.BIG
 		children = records
+	default:
+		slog.Warn("Invalid node type in response", "type", msg.Data[0], "msg", msg)
+		return DatumMsg{}, errors.New("invalid node type in response")
 	}
 
 	return DatumMsg{
@@ -296,7 +303,7 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 		Hash:            hash,
 		NodeType:        nodeType,
 		Data:            data,
-		Children:        children,
+		Children:        merkle_tree.DirectoryRecords{Records: children, Raw: msg.Data[handler.HASH_LENGTH:]},
 	}, nil
 }
 

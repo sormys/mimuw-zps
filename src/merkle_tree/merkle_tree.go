@@ -35,7 +35,12 @@ func ConvertStringHashToBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
-type DirectoryRecordRaw struct {
+type DirectoryRecords struct {
+	Records []DirectoryRecord
+	Raw     []byte
+}
+
+type DirectoryRecord struct {
 	Name string
 	Hash []byte
 }

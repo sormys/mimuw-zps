@@ -140,9 +140,9 @@ func TestEncodeDecodeHandshake(t *testing.T) {
 
 	decode := decodeHandshake(data)
 
-	if !bytes.Equal(decode.extensions, getExtensions()) {
+	if !bytes.Equal(decode.extensions, GetExtensions()) {
 		t.Errorf(
-			"Incorrect decode extensions, got %s, but expected %s", decode.extensions, getExtensions())
+			"Incorrect decode extensions, got %s, but expected %s", decode.extensions, GetExtensions())
 		return
 	}
 

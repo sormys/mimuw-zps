@@ -61,7 +61,7 @@ type SignedMessage struct {
 }
 
 func (sm SignedMessage) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(sm.raw[:networking.MIN_HELLO_SIZE+sm.length], sm.Signature, publicKey)
+	return encryption.VerifySignature(sm.raw[:networking.MIN_MESSAGE_SIZE+sm.length], sm.Signature, publicKey)
 }
 
 // ============================PingMsg==============================
@@ -107,10 +107,6 @@ func (hm HelloMsg) Type() networking.MessageType {
 	return networking.HELLO
 }
 
-func (hm HelloMsg) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(hm.raw[:networking.MIN_HELLO_SIZE+hm.length], hm.Signature, publicKey)
-}
-
 // ========================HelloReplyMsg============================
 
 type HelloReplyMsg struct {
@@ -121,10 +117,6 @@ type HelloReplyMsg struct {
 
 func (hrm HelloReplyMsg) Type() networking.MessageType {
 	return networking.HELLO_REPLY
-}
-
-func (hrm HelloReplyMsg) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(hrm.raw[:hrm.length+networking.MIN_MESSAGE_SIZE], hrm.Signature, publicKey)
 }
 
 // ========================RootRequestMsg===========================
@@ -175,7 +167,7 @@ type DatumMsg struct {
 	Hash     handler.Hash
 	NodeType merkle_tree.NodeType
 	Data     []byte
-	Children []merkle_tree.DirectoryRecordRaw
+	Children merkle_tree.DirectoryRecords
 }
 
 func (dr DatumMsg) Type() networking.MessageType {

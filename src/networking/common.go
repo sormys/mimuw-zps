@@ -77,19 +77,6 @@ type SendRequest struct {
 }
 
 const MIN_MESSAGE_SIZE = 7
-const MIN_HELLO_SIZE = 16
-const MIN_HELLO_REPLY_SIZE = 16
-
-func getMinimalSize(messageType MessageType) int {
-	switch messageType {
-	case HELLO:
-		return MIN_HELLO_SIZE
-	case HELLO_REPLY:
-		return MIN_HELLO_REPLY_SIZE
-	default:
-		return -1
-	}
-}
 
 func StoreReceivedMessageData(message encryption.Message, addr net.Addr) ReceivedMessageData {
 	if len(message) < MIN_MESSAGE_SIZE {
@@ -98,13 +85,13 @@ func StoreReceivedMessageData(message encryption.Message, addr net.Addr) Receive
 	}
 	id := utility.GetMessageID(message)
 	messageType := TypeMap[utility.GetMessageType(message)]
-	if len(message) < getMinimalSize(messageType) {
+	if len(message) < MIN_MESSAGE_SIZE {
 		return ReceivedMessageData{ID: id, Err: errors.New(
 			"received message of incorrect size from peer")}
 	}
 	lengthBytes := message[5:7]
 	length := utility.GetNumberFromBytes(lengthBytes)
-	if !utility.EqualIntUint16(len(message), MIN_MESSAGE_SIZE+length) && !utility.EqualIntUint16(len(message), MIN_MESSAGE_SIZE+length+64) {
+	if int(length) > len(message)-MIN_MESSAGE_SIZE {
 		// With or without signature
 		return ReceivedMessageData{ID: id, Err: errors.New(
 			"received message with incorrect data (declared length do not match)")}

@@ -48,7 +48,7 @@ func NewPeer(name string, addresses []net.Addr, key encryption.Key) Peer {
 	return Peer{Name: name, Addresses: addresses, Key: key}
 }
 
-func getExtensions() []byte {
+func GetExtensions() []byte {
 	return []byte{0x00, 0x00, 0x00, 0x00}
 }
 
@@ -95,7 +95,7 @@ func encodeError(id utility.ID, errorMessage string) encryption.Message {
 
 // Creates an Handshake that includes from the given ID and messageType HELLO or HELLO_REPLY.
 func encodeHandshake(typeMessage encryption.TypeMessage, id utility.ID) encryption.Message {
-	extensions := getExtensions()
+	extensions := GetExtensions()
 	name := []byte(USER_NAME)
 	length := utility.GetBytesFromNumber(len(name))
 
