@@ -9,10 +9,3 @@ type File struct {
 	Name string
 	Path string
 }
-
-type Folder struct {
-	Hash       Hash
-	Name       string
-	Subfolders []Folder
-	Files      []File
-}

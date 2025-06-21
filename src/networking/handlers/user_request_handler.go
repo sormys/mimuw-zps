@@ -1,4 +1,4 @@
-package connection_manager
+package handlers
 
 import (
 	"bytes"
@@ -17,6 +17,32 @@ import (
 	"os"
 	"sync"
 )
+
+// Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
+func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.RootReplyMsg, error) {
+	addr := peer.Addresses
+	for _, address := range addr {
+		request := pmp.RootRequestMsg{
+			UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+		}
+		info := conn.SendRequest(address, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+
+		decoded, err := pmp.DecodeMessage(info)
+		if err != nil {
+			return pmp.RootReplyMsg{}, err
+		}
+		switch msg := decoded.(type) {
+		case pmp.ErrorMsg:
+			return pmp.RootReplyMsg{}, errors.New(msg.Message)
+		case pmp.RootReplyMsg:
+			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+				return pmp.RootReplyMsg{}, errors.New("incorrect verify signature")
+			}
+			return msg, nil
+		}
+	}
+	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
+}
 
 // Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickname string) mm.TuiMessage {
@@ -221,7 +247,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, node
 
 		// No such node in memory - ask peer
 		request := pmp.DatumRequestMsg{
-			UnsignedMessage: pmp.NewEmtpyUnsignedMessage(utility.GenerateID()),
+			UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 			Hash:            handler.Hash(hashBytes),
 		}
 		// FIXME(sormys) send to all addresses, check if any address available
@@ -374,7 +400,7 @@ func downloadSubtreeHelper(conn packet_manager.PacketConn, message mm.BasicFileI
 		return nil
 	}
 	request := pmp.DatumRequestMsg{
-		UnsignedMessage: pmp.NewEmtpyUnsignedMessage(utility.GenerateID()),
+		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 		Hash:            handler.Hash(nodeBytes),
 	}
 	// FIXME(sormys) send to all addresses, check if any address available

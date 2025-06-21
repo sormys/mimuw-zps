@@ -3,7 +3,6 @@ package peer_message_parser
 import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/handler"
-	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
 )
@@ -14,7 +13,7 @@ func NewEmptyBaseMassage(id utility.ID) BaseMessage {
 	}
 }
 
-func NewEmtpyUnsignedMessage(id utility.ID) UnsignedMessage {
+func NewEmptyUnsignedMessage(id utility.ID) UnsignedMessage {
 	return UnsignedMessage{NewEmptyBaseMassage(id)}
 }
 
@@ -145,30 +144,7 @@ func encodeDatumRequestMsg(msg DatumRequestMsg) []byte {
 // =============================DatumMsg============================
 
 func encodeDatumMsg(msg DatumMsg) []byte {
-	var dataBytes []byte
-
-	switch msg.NodeType {
-	case merkle_tree.CHUNK:
-		dataBytes = append([]byte{0x0}, msg.Data...)
-
-	case merkle_tree.DIRECTORY:
-		dataBytes = []byte{0x01}
-		for _, child := range msg.Children.Records {
-			nameBytes := make([]byte, DIR_HALF_ENTRY)
-			copy(nameBytes, []byte(child.Name))
-			dataBytes = append(dataBytes, nameBytes...)
-			dataBytes = append(dataBytes, child.Hash...)
-		}
-
-	case merkle_tree.BIG:
-		dataBytes = []byte{0x03}
-		for _, child := range msg.Children.Records {
-			dataBytes = append(dataBytes, child.Hash...)
-		}
-
-	default:
-		return nil
-	}
+	dataBytes := msg.Data
 
 	length := uint16(handler.HASH_LENGTH + len(dataBytes))
 
