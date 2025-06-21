@@ -5,11 +5,9 @@ import (
 	"log/slog"
 	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/message_manager"
-	"mimuw_zps/src/networking"
-	cm "mimuw_zps/src/networking/handlers"
+	"mimuw_zps/src/networking/handlers"
 	"mimuw_zps/src/networking/packet_manager"
 	"mimuw_zps/src/networking/srv_conn"
-	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/tui"
 	"net"
 	"os"
@@ -18,33 +16,6 @@ import (
 )
 
 var nickname string
-
-func handlerReceiver(conn packet_manager.PacketConn, tuiSender chan<- message_manager.TuiMessage, server srv_conn.Server) {
-	for {
-		// I am not sure if this solution is safe, when we get a lots of requests
-		data := conn.RecvRequest()
-		decoded, err := pmp.DecodeMessage(data)
-		go func(data networking.ReceivedMessageData) {
-			switch msg := decoded.(type) {
-			case pmp.HelloMsg:
-				err = cm.HandleHello(conn, data.Addr, msg, server, nickname)
-			case pmp.RootRequestMsg:
-				err = cm.HandleRootRequest(conn, data.Addr, msg)
-			case pmp.DatumRequestMsg:
-				err = cm.HandleDatumRequest(conn, data.Addr, msg)
-			case pmp.PingMsg:
-				err = cm.HandlePing(conn, data.Addr, msg)
-			default:
-				slog.Warn("Currently no handler for request of type", "type", msg.Type())
-			}
-
-			if err != nil {
-				cm.SendErrorReply(conn, data.Addr, err)
-				tuiSender <- message_manager.ConvertErrorToTuiMessage(err)
-			}
-		}(data)
-	}
-}
 
 func setupLogger() {
 	w := os.Stderr
@@ -71,7 +42,7 @@ func main() {
 	myAddress := ":0"
 	server_url := "https://galene.org:8448"
 	path := "../../root"
-	myReceiverCount := 1
+	// myReceiverCount := 1
 	n := "schabowy"
 
 	setupLogger()
@@ -96,11 +67,8 @@ func main() {
 	channelToSend := make(chan message_manager.TuiMessage, channel_size)
 	receiveFromTui := make(chan message_manager.TuiMessage, channel_size)
 
-	go cm.RunUserRequestHandler(conn, receiveFromTui, channelToSend, server, nickname)
-
-	for range myReceiverCount {
-		go handlerReceiver(conn, channelToSend, server)
-	}
+	go handlers.RunUserRequestHandler(conn, receiveFromTui, channelToSend, server, nickname)
+	go handlers.RunPeerRequestHandler(conn, channelToSend, server, nickname)
 
 	slog.Debug("Trying to connect to server...", "nickname", nickname)
 	err = server.ConnectWithServer(nickname, conn)

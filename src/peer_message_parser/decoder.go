@@ -7,6 +7,7 @@ import (
 	"mimuw_zps/src/handler"
 	"mimuw_zps/src/merkle_tree"
 	"mimuw_zps/src/networking"
+	"net"
 	"unicode/utf8"
 )
 
@@ -46,6 +47,10 @@ func DecodeMessage(msg networking.ReceivedMessageData) (PeerMessage, error) {
 		return decodeDatumMsg(msg)
 	case networking.NO_DATUM:
 		return decodeNoDatumMsg(msg)
+	case networking.NAT_TRAVERSAL:
+		return decodeNATTraversal(msg)
+	case networking.NAT_TRAVERSAL2:
+		return decodeNATTraversal2(msg)
 	}
 	return nil, decoderError("unknown message type: " + msg.MessType)
 }
@@ -324,6 +329,80 @@ func decodeNoDatumMsg(msg networking.ReceivedMessageData) (NoDatumMsg, error) {
 	return NoDatumMsg{
 		SignedMessage: newSignedMessage(msg, signature),
 		Hash:          handler.Hash(msg.Data[:handler.HASH_LENGTH]),
+	}, nil
+}
+
+// =============================NATTRaversalMsg============================
+
+func decodeNATTraversal(msg networking.ReceivedMessageData) (NATTraversal, error) {
+	if err := basicValidation(msg); err != nil {
+		return NATTraversal{}, err
+	}
+	var addr net.Addr
+	if msg.Length == IPV4_LEN {
+		ip := net.IPv4(msg.Data[0], msg.Data[1], msg.Data[2], msg.Data[3])
+
+		port := int(msg.Data[4])<<8 | int(msg.Data[5])
+
+		addr = &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		}
+	} else if msg.Length == IPV6_LEN {
+		ip := net.IP(msg.Data[0 : IPV6_LEN-2])
+
+		port := int(msg.Data[IPV6_LEN-2])<<8 | int(msg.Data[IPV6_LEN-1])
+
+		addr = &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		}
+	}
+	signature, err := getSignature(msg)
+	if err != nil {
+		return NATTraversal{}, err
+	}
+
+	return NATTraversal{
+		SignedMessage: newSignedMessage(msg, signature),
+		Addr:          addr,
+	}, nil
+}
+
+// =============================NATTRaversal2Msg============================
+
+func decodeNATTraversal2(msg networking.ReceivedMessageData) (NATTraversal2, error) {
+	if err := basicValidation(msg); err != nil {
+		return NATTraversal2{}, err
+	}
+	var addr net.Addr
+	if msg.Length == IPV4_LEN {
+		ip := net.IPv4(msg.Data[0], msg.Data[1], msg.Data[2], msg.Data[3])
+
+		port := int(msg.Data[4])<<8 | int(msg.Data[5])
+
+		addr = &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		}
+	} else if msg.Length == IPV6_LEN {
+		ip := net.IP(msg.Data[0 : IPV6_LEN-2])
+
+		port := int(msg.Data[IPV6_LEN-2])<<8 | int(msg.Data[IPV6_LEN-1])
+
+		addr = &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		}
+	}
+	signature, err := getSignature(msg)
+	if err != nil {
+		return NATTraversal2{}, err
+	}
+
+	return NATTraversal2{
+		SignedMessage: newSignedMessage(msg, signature),
+		Addr:          addr,
 	}, nil
 }
 

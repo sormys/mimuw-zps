@@ -32,16 +32,18 @@ func NewPeer(name string, addresses []net.Addr, key encryption.Key) Peer {
 type MessageType = string
 
 const (
-	PING          MessageType = "Ping"
-	HELLO         MessageType = "Hello"
-	ROOT_REQUEST  MessageType = "RootRequest"
-	DATUM_REQUEST MessageType = "DatumRequest"
-	PONG          MessageType = "Pong"
-	ERROR         MessageType = "Error"
-	HELLO_REPLY   MessageType = "HelloReply"
-	ROOT_REPLY    MessageType = "RootReply"
-	DATUM         MessageType = "Datum"
-	NO_DATUM      MessageType = "NoDatum"
+	PING           MessageType = "Ping"
+	HELLO          MessageType = "Hello"
+	ROOT_REQUEST   MessageType = "RootRequest"
+	DATUM_REQUEST  MessageType = "DatumRequest"
+	PONG           MessageType = "Pong"
+	ERROR          MessageType = "Error"
+	HELLO_REPLY    MessageType = "HelloReply"
+	ROOT_REPLY     MessageType = "RootReply"
+	DATUM          MessageType = "Datum"
+	NO_DATUM       MessageType = "NoDatum"
+	NAT_TRAVERSAL  MessageType = "NatTraversal"
+	NAT_TRAVERSAL2 MessageType = "NatTraversal2"
 )
 
 func IsRequest(messageType MessageType) bool {
@@ -68,6 +70,8 @@ var TypeMap = map[uint8]MessageType{
 	0x01: HELLO,
 	0x02: ROOT_REQUEST,
 	0x03: DATUM_REQUEST,
+	0x04: NAT_TRAVERSAL,
+	0x05: NAT_TRAVERSAL2,
 	0x80: PONG,
 	0x81: ERROR,
 	0x82: HELLO_REPLY,

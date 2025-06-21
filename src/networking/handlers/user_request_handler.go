@@ -14,6 +14,7 @@ import (
 	"mimuw_zps/src/networking/srv_conn"
 	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
+	"net"
 	"os"
 	"sync"
 )
@@ -44,6 +45,21 @@ func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.
 	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
 }
 
+func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname string) {
+	addr, _ := net.ResolveUDPAddr("udp", "51.210.14.2:8443") // temporrily hard coded galene ip
+	request := pmp.NATTraversal{
+		SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+		Addr:          peer.Addresses[0],
+	}
+	reply := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+	decoded, _ := pmp.DecodeMessage(reply)
+	slog.Error("Got reply for natraversal", "reply", decoded)
+	switch msg := decoded.(type) {
+	case pmp.ErrorMsg:
+		slog.Error("Got ERROR for natraversal", "msessagae", msg.Message)
+	}
+}
+
 // Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickname string) mm.TuiMessage {
 	addresses := peer.Addresses
@@ -56,6 +72,10 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 		}
 		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 
+		if info.Err != nil {
+			UDPHolePunch(conn, peer, nickname)
+		}
+		info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 		decoded, err := pmp.DecodeMessage(info)
 		if err != nil {
 			return mm.TuiError(err.Error())

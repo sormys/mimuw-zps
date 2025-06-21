@@ -14,6 +14,10 @@ const EXTENSIONS_LEN = 4
 
 type Extensions [EXTENSIONS_LEN]byte
 
+func GetExtensions() Extensions {
+	return Extensions{0x00, 0x00, 0x00, 0x00}
+}
+
 type PeerMessage interface {
 	Raw() encryption.Message
 	Type() networking.MessageType
@@ -174,7 +178,7 @@ func (dr DatumMsg) Type() networking.MessageType {
 	return networking.DATUM
 }
 
-// =============================NoDatumMsg============================
+// =============================NoDatumMsg==========================
 
 type NoDatumMsg struct {
 	SignedMessage
@@ -185,8 +189,30 @@ func (dr NoDatumMsg) Type() networking.MessageType {
 	return networking.NO_DATUM
 }
 
-func GetExtensions() Extensions {
-	return Extensions{0x00, 0x00, 0x00, 0x00}
+// TODO(sormys) add NatTraversal messages
+// ===========================NATTraversal==========================
+
+const (
+	IPV4_LEN = 6
+	IPV6_LEN = 18
+)
+
+type NATTraversal struct {
+	SignedMessage
+	Addr net.Addr
 }
 
-// TODO(sormys) add NatTraversal messages
+func (dr NATTraversal) Type() networking.MessageType {
+	return networking.NAT_TRAVERSAL
+}
+
+// ===========================NATTraversal2==========================
+
+type NATTraversal2 struct {
+	SignedMessage
+	Addr net.Addr
+}
+
+func (dr NATTraversal2) Type() networking.MessageType {
+	return networking.NAT_TRAVERSAL2
+}

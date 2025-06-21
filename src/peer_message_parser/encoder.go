@@ -5,6 +5,7 @@ import (
 	"mimuw_zps/src/handler"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/utility"
+	"net"
 )
 
 func NewEmptyBaseMassage(id utility.ID) BaseMessage {
@@ -22,8 +23,6 @@ func NewEmptySignedMessage(id utility.ID) SignedMessage {
 }
 
 // EncodeMessage converts a peerMessage to raw bytes for transmission
-// PeerMessage length parameter can be of any value as it will be calculated
-// during encoding.
 func EncodeMessage(msg PeerMessage) []byte {
 	switch m := msg.(type) {
 	case PingMsg:
@@ -46,6 +45,10 @@ func EncodeMessage(msg PeerMessage) []byte {
 		return encodeDatumMsg(m)
 	case NoDatumMsg:
 		return encodeNoDatumMsg(m)
+	case NATTraversal:
+		return encodeNATTraversal(m)
+	case NATTraversal2:
+		return encodeNATTraversal2(m)
 	default:
 		return nil
 	}
@@ -163,6 +166,76 @@ func encodeNoDatumMsg(msg NoDatumMsg) []byte {
 
 	result := createBaseMessage(msg.ID(), networking.NO_DATUM, length)
 	result = append(result, msg.Hash[:]...)
+	signature := encryption.GetSignature(result)
+	result = append(result, signature[:]...)
+	return result
+}
+
+// ===========================NATTraversal==========================
+
+func encodeNATTraversal(msg NATTraversal) []byte {
+	var addrBytes []byte
+	var length uint16
+
+	// Convert address to bytes based on IP version
+	if udpAddr, ok := msg.Addr.(*net.UDPAddr); ok {
+		if ipv4 := udpAddr.IP.To4(); ipv4 != nil {
+			// IPv4 address: 4 bytes IP + 2 bytes port
+			addrBytes = make([]byte, IPV4_LEN)
+			copy(addrBytes[:4], ipv4)
+			addrBytes[4] = byte(udpAddr.Port >> 8)
+			addrBytes[5] = byte(udpAddr.Port & 0xFF)
+			length = IPV4_LEN
+		} else {
+			// IPv6 address: 16 bytes IP + 2 bytes port
+			addrBytes = make([]byte, IPV6_LEN)
+			copy(addrBytes[:16], udpAddr.IP.To16())
+			addrBytes[16] = byte(udpAddr.Port >> 8)
+			addrBytes[17] = byte(udpAddr.Port & 0xFF)
+			length = IPV6_LEN
+		}
+	} else {
+		// Fallback for unknown address types
+		return nil
+	}
+
+	result := createBaseMessage(msg.ID(), networking.NAT_TRAVERSAL, length)
+	result = append(result, addrBytes...)
+	signature := encryption.GetSignature(result)
+	result = append(result, signature[:]...)
+	return result
+}
+
+// ===========================NATTraversal2=========================
+
+func encodeNATTraversal2(msg NATTraversal2) []byte {
+	var addrBytes []byte
+	var length uint16
+
+	// Convert address to bytes based on IP version
+	if udpAddr, ok := msg.Addr.(*net.UDPAddr); ok {
+		if ipv4 := udpAddr.IP.To4(); ipv4 != nil {
+			// IPv4 address: 4 bytes IP + 2 bytes port
+			addrBytes = make([]byte, IPV4_LEN)
+			copy(addrBytes[:4], ipv4)
+			addrBytes[4] = byte(udpAddr.Port >> 8)
+			addrBytes[5] = byte(udpAddr.Port & 0xFF)
+			length = IPV4_LEN
+		} else {
+			// IPv6 address: 16 bytes IP + 2 bytes port
+			addrBytes = make([]byte, IPV6_LEN)
+			copy(addrBytes[:16], udpAddr.IP.To16())
+			addrBytes[16] = byte(udpAddr.Port >> 8)
+			addrBytes[17] = byte(udpAddr.Port & 0xFF)
+			length = IPV6_LEN
+		}
+	} else {
+		// Fallback for unknown address types
+		return nil
+	}
+
+	result := createBaseMessage(msg.ID(), networking.NAT_TRAVERSAL2, length)
+	result = append(result, addrBytes...)
 	signature := encryption.GetSignature(result)
 	result = append(result, signature[:]...)
 	return result
