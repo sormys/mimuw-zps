@@ -23,7 +23,7 @@ func hashData(childrenHash [][]byte) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-func hashDatum(data Datum) handler.Hash {
+func hashDatum(data *Datum) handler.Hash {
 	h := sha256.New()
 	var nodeTypeByte byte
 	switch data.NodeType {
@@ -38,6 +38,7 @@ func hashDatum(data Datum) handler.Hash {
 	h.Write(data.Data)
 	var out handler.Hash
 	copy(out[:], h.Sum(nil))
+	data.Hash = out
 	return out
 }
 
