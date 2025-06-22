@@ -116,7 +116,6 @@ func handlePing(conn packet_manager.PacketConn, addr net.Addr, ping pmp.PingMsg)
 }
 
 func handleNATTraversal2(conn packet_manager.PacketConn, nattrav2 pmp.NATTraversal2) {
-	slog.Error("Received nat traversal2 reques", "rq", nattrav2)
 	ping := pmp.PingMsg{
 		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 	}

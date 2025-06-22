@@ -184,14 +184,12 @@ func decodeHelloReplyMsg(msg networking.ReceivedMessageData) (HelloReplyMsg, err
 // ========================RootRequestMsg===========================
 
 func decodeRootRequestMsg(msg networking.ReceivedMessageData) (RootRequestMsg, error) {
-	slog.Debug("Kocham piwo", "msg", msg)
 	if err := basicValidation(msg); err != nil {
 		return RootRequestMsg{}, err
 	}
-	slog.Debug("A ty ?", "msg", msg)
-	// if msg.Length > 0 {
-	// 	return RootRequestMsg{}, decoderError("root request should have empty body")
-	// }
+	if msg.Length != 32 {
+		return RootRequestMsg{}, decoderError("root request of invalid length")
+	}
 	return RootRequestMsg{
 		UnsignedMessage: newUnsignedMessage(msg),
 	}, nil
@@ -272,7 +270,6 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 	case 0x01:
 		dirEntriesLen := msg.Length - 1 - handler.HASH_LENGTH
 		// DIRECTORY
-		slog.Debug("Directory entry data", "data", msg)
 		if dirEntriesLen%DIR_ENTRY_SIZE != 0 || dirEntriesLen/DIR_ENTRY_SIZE > DIR_MAX_ENTRIES {
 			return DatumMsg{}, decoderError("directory entires are of incorrect length")
 		}
