@@ -19,11 +19,11 @@ func NewPolicyHandshake() *RetryPolicyHandshake {
 }
 
 func NewRetryPolicyAwaitOnce() *RetryPolicyRequest {
-	return &RetryPolicyRequest{retryCount: 1}
+	return &RetryPolicyRequest{retryLimit: 1}
 }
 
 func NewRetryPolicyRequest() *RetryPolicyRequest {
-	return &RetryPolicyRequest{retryCount: 2}
+	return &RetryPolicyRequest{retryLimit: 4}
 }
 
 func (rp *RetryPolicyHandshake) NextRetry() (time.Duration, error) {

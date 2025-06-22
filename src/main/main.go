@@ -43,7 +43,7 @@ func main() {
 	server_url := "https://galene.org:8448"
 	path := "../../root"
 	// myReceiverCount := 1
-	n := "Belmondo"
+	n := "NapoleonZWiekszymBerlem"
 
 	setupLogger()
 
@@ -69,6 +69,7 @@ func main() {
 
 	go handlers.RunUserRequestHandler(conn, receiveFromTui, channelToSend, server, nickname)
 	go handlers.RunPeerRequestHandler(conn, channelToSend, server, nickname)
+	go handlers.RunAutoRefreshConnections(conn)
 
 	slog.Debug("Trying to connect to server...", "nickname", nickname)
 	err = server.ConnectWithServer(nickname, conn)

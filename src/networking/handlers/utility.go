@@ -1,26 +1,92 @@
 package handlers
 
 import (
-	"bytes"
 	"log/slog"
-	"mimuw_zps/src/encryption"
-	"mimuw_zps/src/handler"
 	"mimuw_zps/src/networking"
+	"mimuw_zps/src/networking/packet_manager"
+	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
 	"net"
 	"strings"
+	"sync"
+	"time"
 )
 
-var (
-	HELLO         = encryption.TypeMessage([]byte{0x01})
-	EMPTY_LENGTH  = encryption.TypeMessage([]byte{0x00, 0x00})
-	HELLO_REPLY   = encryption.TypeMessage([]byte{0x82})
-	ROOT_REQUEST  = encryption.TypeMessage([]byte{0x02})
-	ERROR         = encryption.TypeMessage([]byte{0x81})
-	DATUM_REQUEST = encryption.TypeMessage([]byte{0x03})
-)
+type PeerStatus struct {
+	outgoing bool
+	lastPing time.Time
+	peer     networking.Peer
+}
 
-const EXT_LEN = 4
+var connectedPeers map[string]PeerStatus
+var mutex sync.Mutex
+
+func connectPeer(outgoing bool, peer networking.Peer) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	connectedPeers[peer.Name] = PeerStatus{outgoing: outgoing,
+		lastPing: time.Now(), peer: peer}
+}
+
+func tryPingPeer(conn packet_manager.PacketConn, peer networking.Peer) {
+	ping := pmp.PingMsg{
+		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+	}
+	for _, addr := range peer.Addresses {
+		reply := conn.SendRequest(addr, pmp.EncodeMessage(ping),
+			networking.NewRetryPolicyRequest())
+		decoded, err := pmp.DecodeMessage(reply)
+		if err != nil {
+			slog.Warn("Error while pinging", "nickname", peer.Name, "err", err)
+			continue
+		}
+		switch msg := decoded.(type) {
+		case pmp.ErrorMsg:
+			slog.Warn("Received error reply to ping", "nickname", peer.Name, "message", msg.Message)
+		case pmp.PongMsg:
+			mutex.Lock()
+			defer mutex.Unlock()
+			status, exists := connectedPeers[peer.Name]
+			if !exists {
+				slog.Debug("Pinged user that is no longer connected", "nickname", peer.Name)
+				return
+			}
+			status.lastPing = time.Now()
+			connectedPeers[peer.Name] = status
+			slog.Debug("Connection refreshed!", "peer", peer.Name)
+			return
+		default:
+			slog.Warn("Received unexpected reply to ping", "nickname", peer.Name, "message type", msg.Type())
+		}
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	status, exists := connectedPeers[peer.Name]
+	if !exists {
+		return
+	}
+	if time.Since(status.lastPing) > 5*time.Minute {
+		delete(connectedPeers, peer.Name)
+		slog.Info("Removed peer due to ping timeout", "nickname", peer.Name)
+	}
+}
+
+func RunAutoRefreshConnections(conn packet_manager.PacketConn) {
+	for {
+		time.Sleep(2 * time.Minute)
+
+		mutex.Lock()
+		peers := make([]networking.Peer, 0, len(connectedPeers))
+		for _, status := range connectedPeers {
+			peers = append(peers, status.peer)
+		}
+		mutex.Unlock()
+
+		for _, peer := range peers {
+			go tryPingPeer(conn, peer)
+		}
+	}
+}
 
 func printAddreses(addresses []net.Addr) string {
 	result := make([]string, len(addresses))
@@ -29,62 +95,4 @@ func printAddreses(addresses []net.Addr) string {
 		result[i] = "[" + addr.String() + "]"
 	}
 	return strings.Join(result, ", ")
-}
-
-func verifyIdAndType(data networking.ReceivedMessageData, id utility.ID, expectedType networking.MessageType) bool {
-	id2 := data.ID
-	if !bytes.Equal(id2[:], id[:]) || data.MessType != expectedType {
-		return false
-	}
-	return true
-}
-
-func getHashFromRootReply(data networking.ReceivedMessageData) handler.Hash {
-	if len(data.Data) < 32 {
-		return handler.Hash{}
-	}
-	var hash handler.Hash
-	copy(hash[:], data.Data[:32])
-	return hash
-}
-
-func getNameFromReceivedHandshake(data networking.ReceivedMessageData) string {
-	nameBytes := data.Data[EXT_LEN:data.Length]
-	slog.Debug("Got name from Hanshake", "name", string(nameBytes))
-	return string(nameBytes)
-}
-
-func getSignatureFromReceivedHandshake(data networking.ReceivedMessageData) encryption.Signature {
-	if len(data.Data) < int(data.Length)+encryption.KEY_LENGTH {
-		return encryption.EMPTY_SIGNATURE
-	}
-	return encryption.Signature(data.Data[data.Length : data.Length+encryption.KEY_LENGTH])
-}
-
-func createDatumRequestTemplate(id utility.ID, messageType encryption.TypeMessage, hash handler.Hash) encryption.Message {
-	length := utility.GetBytesFromNumber(handler.HASH_LENGTH)
-
-	message := utility.GenerateEmptyBuffor()
-	message = append(message, id[:]...)
-	message = append(message, messageType...)
-	message = append(message, length...)
-	message = append(message, hash[:]...)
-	return message
-}
-
-func createErrorReply(err error) encryption.Message {
-	var error_string string = "nil"
-	if err != nil {
-		error_string = err.Error()
-	}
-
-	length := utility.GetBytesFromNumber(len(error_string))
-	id := utility.GenerateID()
-
-	message := utility.GenerateEmptyBuffor()
-	message = append(message, id[:]...)
-	message = append(message, ERROR...)
-	message = append(message, length...)
-	message = append(message, []byte(error_string)...)
-	return encryption.Message(message)
 }
