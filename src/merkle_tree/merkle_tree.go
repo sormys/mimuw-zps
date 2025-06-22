@@ -24,22 +24,9 @@ func hashData(childrenHash [][]byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 func hashDatum(data *Datum) handler.Hash {
-	h := sha256.New()
-	var nodeTypeByte byte
-	switch data.NodeType {
-	case CHUNK:
-		nodeTypeByte = 0
-	case DIRECTORY:
-		nodeTypeByte = 1
-	case BIG:
-		nodeTypeByte = 2
-	}
-	h.Write([]byte{nodeTypeByte})
-	h.Write(data.Data)
-	var out handler.Hash
-	copy(out[:], h.Sum(nil))
-	data.Hash = out
-	return out
+	h := sha256.Sum256(data.Data)
+	data.Hash = h
+	return h
 }
 
 func ConvertHashToString(hash hash.Hash) string {
