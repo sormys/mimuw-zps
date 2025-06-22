@@ -124,7 +124,10 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 				UDPHolePunch(conn, peer, nickname, 5)
 			}
 			info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
-			decoded, _ := pmp.DecodeMessage(info)
+			decoded, err := pmp.DecodeMessage(info)
+			if err != nil {
+				resultCh <- mm.TuiError(err.Error())
+			}
 			switch msg := decoded.(type) {
 			case pmp.ErrorMsg:
 				resultCh <- mm.TuiError("Error reply from peer: " + msg.Message)
@@ -132,6 +135,7 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 				if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
 					resultCh <- mm.TuiError("Invalid hello reply signature")
 				}
+				ConnectPeer(true, peer, msg.Extensions)
 				resultCh <- mm.InitConnectionMessage(peer)
 			}
 		}(addr)
