@@ -150,6 +150,7 @@ func findFolder(folder *message_manager.TUIFolder, path string) *message_manager
 
 // Receives external data and updates internal states
 func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
+	m.infoOutside = ""
 	switch message.RequestType() {
 
 	case message_manager.FOLDER_TUI:
@@ -259,12 +260,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			if m.state == USER_INFO {
 				m.selectedUser = m.users[m.cursor]
+				m.infoOutside = "Trying to connect with user " + m.selectedUser.Name
 				m.tuiSender <- message_manager.InitConnectionMessage(m.selectedUser)
+
 			}
 		case "d":
 			if m.state == USER_INFO && m.selectedUser.Stage == networking.CONNECT {
 				m.selectedUser = m.users[m.cursor]
 				m.cursor = 0
+				m.infoOutside = "Trying to get Root from " + m.selectedUser.Name
 				m.tuiSender <- message_manager.InitGetDataMessage(m.selectedUser)
 			}
 		case "r":

@@ -41,24 +41,37 @@ func getDownloadPath(path string) (string, error) {
 // Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
 func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.RootReplyMsg, error) {
 	addr := peer.Addresses
+	type result struct {
+		reply pmp.RootReplyMsg
+		err   error
+	}
+	resultCh := make(chan result, len(addr))
 	for _, address := range addr {
-		request := pmp.RootRequestMsg{
-			UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-		}
-		info := conn.SendRequest(address, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
-
-		decoded, err := pmp.DecodeMessage(info)
-		if err != nil {
-			return pmp.RootReplyMsg{}, err
-		}
-		switch msg := decoded.(type) {
-		case pmp.ErrorMsg:
-			return pmp.RootReplyMsg{}, errors.New(msg.Message)
-		case pmp.RootReplyMsg:
-			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
-				return pmp.RootReplyMsg{}, errors.New("incorrect verify signature")
+		go func(address net.Addr) {
+			request := pmp.RootRequestMsg{
+				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 			}
-			return msg, nil
+			info := conn.SendRequest(address, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+
+			decoded, err := pmp.DecodeMessage(info)
+			if err != nil {
+				resultCh <- result{err: err}
+			}
+			switch msg := decoded.(type) {
+			case pmp.ErrorMsg:
+				resultCh <- result{err: errors.New(msg.Message)}
+			case pmp.RootReplyMsg:
+				if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+					resultCh <- result{err: errors.New("incorrect verify signature")}
+				}
+				resultCh <- result{reply: msg, err: nil}
+			}
+		}(address)
+	}
+	for range addr {
+		res := <-resultCh
+		if res.err == nil {
+			return res.reply, nil
 		}
 	}
 	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
@@ -82,33 +95,38 @@ func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname
 // Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickname string) mm.TuiMessage {
 	addresses := peer.Addresses
-	slog.Debug("Starting connection with peer", "nickname", peer.Name)
+	resultCh := make(chan mm.TuiMessage, len(addresses))
 	for _, addr := range addresses {
-		request := pmp.HelloMsg{
-			SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-			Extensions:    pmp.Extensions(pmp.GetExtensions()),
-			Name:          nickname,
-		}
-		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
+		go func(addr net.Addr) {
+			request := pmp.HelloMsg{
+				SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+				Extensions:    pmp.Extensions(pmp.GetExtensions()),
+				Name:          nickname,
+			}
+			info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 
-		if info.Err != nil {
-			for range 5 {
-				UDPHolePunch(conn, peer, nickname)
+			if info.Err != nil {
+				for range 5 {
+					UDPHolePunch(conn, peer, nickname)
+				}
 			}
-		}
-		info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
-		decoded, err := pmp.DecodeMessage(info)
-		if err != nil {
-			return mm.TuiError(err.Error())
-		}
-		switch msg := decoded.(type) {
-		case pmp.ErrorMsg:
-			return mm.TuiError("Error reply from peer: " + msg.Message)
-		case pmp.HelloReplyMsg:
-			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
-				return mm.TuiError("Invalid hello reply signature")
+			info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
+			decoded, _ := pmp.DecodeMessage(info)
+			switch msg := decoded.(type) {
+			case pmp.ErrorMsg:
+				resultCh <- mm.TuiError("Error reply from peer: " + msg.Message)
+			case pmp.HelloReplyMsg:
+				if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+					resultCh <- mm.TuiError("Invalid hello reply signature")
+				}
+				resultCh <- mm.InitConnectionMessage(peer)
 			}
-			return mm.InitConnectionMessage(peer)
+		}(addr)
+	}
+	for range addresses {
+		res := <-resultCh
+		if res.RequestType() == mm.CONNECT {
+			return res
 		}
 	}
 
@@ -117,24 +135,18 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 
 // reloads all files associated with the provided peer in message
 
-func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
-	receivedData, err := sendRootRequest(conn, peer)
-	if err != nil {
-		slog.Warn("Fail during sending root request", "error", err)
-		return mm.ConvertErrorToTuiMessage(err)
-	}
+func askForData(addr net.Addr,
+	conn packet_manager.PacketConn,
+	request pmp.DatumRequestMsg,
+	tree mt.RemoteMerkleTree,
+	hash string,
+	peersTrees map[string]mt.RemoteMerkleTree,
+	peer networking.Peer) mm.TuiMessage {
 
-	hash := mt.ConvertHashBytesToString(receivedData.Hash[:])
-	tree := mt.NewRemoteMerkleTree(hash)
-	request := pmp.DatumRequestMsg{
-		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-		Hash:            receivedData.Hash,
-	}
-	data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
+	data := conn.SendRequest(addr, pmp.EncodeMessage(request),
 		networking.NewRetryPolicyRequest())
-
 	if data.Err != nil {
-		return mm.TuiError("Failed to get response from peer")
+		return mm.TuiError("Failed to get response from peer" + data.Err.Error())
 	}
 	dscvType := decodeDatumResponse(hash, data)
 	if dscvType.msg.NodeType == mt.DIRECTORY {
@@ -169,6 +181,22 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, pee
 		Expanded:   true,
 	}
 	return message_manager.CreateTuiFolders(folder)
+}
+func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
+	receivedData, err := sendRootRequest(conn, peer)
+	if err != nil {
+		slog.Warn("Fail during sending root request", "error", err)
+		return mm.ConvertErrorToTuiMessage(err)
+	}
+
+	hash := mt.ConvertHashBytesToString(receivedData.Hash[:])
+	tree := mt.NewRemoteMerkleTree(hash)
+
+	request := pmp.DatumRequestMsg{
+		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+		Hash:            receivedData.Hash,
+	}
+	return askForData(receivedData.Sender(), conn, request, tree, hash, peersTrees, peer)
 }
 
 // return a list with available peers
@@ -208,6 +236,28 @@ func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData
 	return discoveredType{hash: reqHash, err: errors.New("received unexpected reply from host")}
 }
 
+func sendDatumRequestConcurrently(conn packet_manager.PacketConn, addresses []net.Addr, hash []byte) networking.ReceivedMessageData {
+	resultCh := make(chan networking.ReceivedMessageData, len(addresses))
+
+	for _, addr := range addresses {
+		go func(addr net.Addr) {
+			request := pmp.DatumRequestMsg{
+				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+				Hash:            handler.Hash(hash),
+			}
+			data := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+			resultCh <- data
+		}(addr)
+	}
+
+	for range addresses {
+		res := <-resultCh
+		if res.Err == nil {
+			return res
+		}
+	}
+	return networking.ReceivedMessageData{Err: errors.New("none of peers responded successfully")}
+}
 func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, nodeHash string,
 	tree mt.RemoteMerkleTree, dscvChan chan<- discoveredType) {
 	startHash := nodeHash
@@ -239,14 +289,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, node
 			continue
 		}
 
-		// No such node in memory - ask peer
-		request := pmp.DatumRequestMsg{
-			UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-			Hash:            handler.Hash(hashBytes),
-		}
-		// FIXME(sormys) send to all addresses, check if any address available
-		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
-			networking.NewRetryPolicyRequest())
+		data := sendDatumRequestConcurrently(conn, peer.Addresses, hashBytes)
 
 		if data.Err != nil {
 			dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: data.Err}
