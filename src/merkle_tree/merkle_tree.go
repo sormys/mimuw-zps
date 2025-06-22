@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"hash"
 	"mimuw_zps/src/handler"
+	"path/filepath"
+	"runtime"
 )
 
 type NodeType string
@@ -14,6 +16,7 @@ const (
 	CHUNK     NodeType = "chunk"
 	DIRECTORY NodeType = "directory"
 	BIG       NodeType = "big"
+	ROOT      string   = "root"
 )
 
 func hashData(childrenHash [][]byte) string {
@@ -49,6 +52,13 @@ func ConvertHashBytesToString(hash []byte) string {
 
 func ConvertStringHashToBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
+}
+
+func GetMerkleeDirectory() (string, bool) {
+	_, filename, _, ok := runtime.Caller(0)
+	base := filepath.Dir(filepath.Dir(filepath.Dir(filename)))
+	merkle := filepath.Join(base, "root")
+	return merkle, ok
 }
 
 type DirectoryRecords struct {

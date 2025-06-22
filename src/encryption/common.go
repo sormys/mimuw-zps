@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"path/filepath"
+	"runtime"
 )
 
 const KEY_LENGTH = 64
@@ -28,6 +30,12 @@ type Key = [KEY_LENGTH]byte
 var privateKey *ecdsa.PrivateKey
 var publicKey *ecdsa.PublicKey
 
+func getKeyPath(privateKeyFile string) (string, error) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := filepath.Dir(filename)
+	return filepath.Join(dir, privateKeyFile), nil
+}
+
 func savePrivateKeyToFile(key *ecdsa.PrivateKey) error {
 	data, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
@@ -37,27 +45,34 @@ func savePrivateKeyToFile(key *ecdsa.PrivateKey) error {
 		Type:  "EC PRIVATE KEY",
 		Bytes: data,
 	}
-	file, err := os.Create(privateKeyFile)
+	path, err := getKeyPath(privateKeyFile)
+	if err != nil {
+		return err
+	}
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	err = pem.Encode(file, pemBlock)
-	if err != nil {
-		return err
-	}
-	return nil
-
+	return pem.Encode(file, pemBlock)
 }
 
 func loadPrivateKeyFromFile() (*ecdsa.PrivateKey, error) {
-	data, _ := os.ReadFile(privateKeyFile)
+	path, err := getKeyPath(privateKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	data, _ := os.ReadFile(path)
 	block, _ := pem.Decode(data)
 	return x509.ParseECPrivateKey(block.Bytes)
 }
 
 func PrivateKeyFileExists() bool {
-	_, err := os.Stat(privateKeyFile)
+	path, err := getKeyPath(privateKeyFile)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
 	return err == nil
 }
 

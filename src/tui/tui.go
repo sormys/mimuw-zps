@@ -299,7 +299,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				} else {
 					m.infoOutside = "Start downloading" + item.Name
-					m.tuiSender <- message_manager.DownloadFile(item.Hash, m.selectedUser)
+					m.tuiSender <- message_manager.DownloadFile(item.Hash, m.selectedUser, item.Name)
 				}
 				return m, nil
 			}

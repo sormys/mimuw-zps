@@ -41,9 +41,7 @@ func main() {
 	receiverCount := uint32(2)
 	myAddress := ":0"
 	server_url := "https://galene.org:8448"
-	path := "../../root"
-	// myReceiverCount := 1
-	n := "NapoleonZWiekszymBerlem"
+	n := "coleslaw"
 
 	setupLogger()
 
@@ -82,8 +80,11 @@ func main() {
 	channelToSend <- message_manager.ConvertErrorsToTuiMessage(errArray)
 	channelToSend <- message_manager.CreateListPeers(peers)
 
+	path, ok := merkle_tree.GetMerkleeDirectory()
+	if !ok {
+		log.Fatal("Problem with init Merkle tree")
+	}
 	err = merkle_tree.InitMerkleTree(path)
-	slog.Debug("Merkle tree root", "root", merkle_tree.GetRoot())
 	if err != nil {
 		log.Fatal("Failed to create Merkle Tree", err)
 	}
