@@ -148,7 +148,7 @@ func handleRetryDeadlinePassed(retryHeap *TaskHeap,
 	if !exists {
 		return
 	}
-	if (*status.sendRequest).CallbackChan != nil {
+	if status.sendRequest != nil && (*status.sendRequest).CallbackChan != nil {
 		if (*status.sendRequest).MessRetryPolicy == nil {
 			errData := networking.ReceivedMessageData{
 				Err: errors.New("retried canceled by retry policy")}
