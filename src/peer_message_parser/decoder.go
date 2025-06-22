@@ -405,5 +405,3 @@ func decodeNATTraversal2(msg networking.ReceivedMessageData) (NATTraversal2, err
 		Addr:          addr,
 	}, nil
 }
-
-// TODO(sormys) add NatTraversal messages

@@ -47,14 +47,7 @@ const (
 )
 
 func IsRequest(messageType MessageType) bool {
-	// FIXME(sormys) temporary solution, should probably just check if code is
-	// >127
-	isRequest := false
-	switch messageType {
-	case HELLO, ROOT_REQUEST, DATUM_REQUEST, PING:
-		isRequest = true
-	}
-	return isRequest
+	return ByteTypeMap[messageType] < 0x80
 }
 
 func swapMap[K comparable, V comparable](original map[K]V) map[V]K {

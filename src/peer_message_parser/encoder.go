@@ -116,9 +116,7 @@ func encodeHelloReplyMsg(msg HelloReplyMsg) []byte {
 // ========================RootRequestMsg===========================
 
 func encodeRootRequestMsg(msg RootRequestMsg) []byte {
-	result := createBaseMessage(msg.ID(), networking.ROOT_REQUEST, 32)
-	emptyBytes := make([]byte, 32)
-	result = append(result, emptyBytes...)
+	result := createBaseMessage(msg.ID(), networking.ROOT_REQUEST, networking.MIN_MESSAGE_SIZE)
 	return result
 }
 
