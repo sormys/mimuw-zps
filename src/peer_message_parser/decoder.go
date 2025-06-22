@@ -26,6 +26,9 @@ func basicValidation(msg networking.ReceivedMessageData) error {
 }
 
 func DecodeMessage(msg networking.ReceivedMessageData) (PeerMessage, error) {
+	if msg.Err != nil {
+		return nil, msg.Err
+	}
 	switch msg.MessType {
 	case networking.PING:
 		return decodePingMsg(msg)
@@ -181,12 +184,14 @@ func decodeHelloReplyMsg(msg networking.ReceivedMessageData) (HelloReplyMsg, err
 // ========================RootRequestMsg===========================
 
 func decodeRootRequestMsg(msg networking.ReceivedMessageData) (RootRequestMsg, error) {
+	slog.Debug("Kocham piwo", "msg", msg)
 	if err := basicValidation(msg); err != nil {
 		return RootRequestMsg{}, err
 	}
-	if msg.Length > 0 {
-		return RootRequestMsg{}, decoderError("root request should have empty body")
-	}
+	slog.Debug("A ty ?", "msg", msg)
+	// if msg.Length > 0 {
+	// 	return RootRequestMsg{}, decoderError("root request should have empty body")
+	// }
 	return RootRequestMsg{
 		UnsignedMessage: newUnsignedMessage(msg),
 	}, nil
@@ -267,6 +272,7 @@ func decodeDatumMsg(msg networking.ReceivedMessageData) (DatumMsg, error) {
 	case 0x01:
 		dirEntriesLen := msg.Length - 1 - handler.HASH_LENGTH
 		// DIRECTORY
+		slog.Debug("Directory entry data", "data", msg)
 		if dirEntriesLen%DIR_ENTRY_SIZE != 0 || dirEntriesLen/DIR_ENTRY_SIZE > DIR_MAX_ENTRIES {
 			return DatumMsg{}, decoderError("directory entires are of incorrect length")
 		}
@@ -405,3 +411,5 @@ func decodeNATTraversal2(msg networking.ReceivedMessageData) (NATTraversal2, err
 		Addr:          addr,
 	}, nil
 }
+
+// TODO(sormys) add NatTraversal messages

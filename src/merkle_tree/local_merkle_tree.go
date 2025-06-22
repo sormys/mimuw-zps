@@ -10,6 +10,7 @@ const MAX_CHUNK = 1024
 const MAX_CHILDREN_SIZE = 32
 
 type Datum struct {
+	Hash     handler.Hash
 	NodeType NodeType
 	Data     []byte
 	Children []string
@@ -37,8 +38,9 @@ func chunkFile(path string) ([]handler.Hash, error) {
 		if n > 0 {
 			chunkData := make([]byte, n)
 			copy(chunkData, buf[:n])
+			chunkData = append([]byte{byte(0x00)}, chunkData...)
 			node := Datum{NodeType: CHUNK, Data: chunkData}
-			hash := hashDatum(node)
+			hash := hashDatum(&node)
 			hashString := ConvertHashBytesToString(hash[:])
 			hashMap[hashString] = node
 			chunks = append(chunks, handler.Hash(hash))
@@ -61,8 +63,9 @@ func buildBigNode(hashes []handler.Hash) (handler.Hash, error) {
 			storedData = append(storedData, hashes[j][:]...)
 			children = append(children, ConvertHashBytesToString(hashes[j][:]))
 		}
-		node := Datum{NodeType: BIG, Data: storedData, Children: children}
-		hash := hashDatum(node)
+		data := append([]byte{byte(0x02)}, storedData...)
+		node := Datum{NodeType: BIG, Data: data, Children: children}
+		hash := hashDatum(&node)
 		hashString := ConvertHashBytesToString(hash[:])
 		hashMap[hashString] = node
 		parentHashes = append(parentHashes, handler.Hash(hash))
@@ -113,8 +116,9 @@ func buildDirectory(path string) (handler.Hash, error) {
 	if err != nil {
 		return handler.Hash{}, err
 	}
+	hashes = append([]byte{byte(0x01)}, hashes...)
 	node := Datum{NodeType: DIRECTORY, Data: hashes, Children: children}
-	hash := hashDatum(node)
+	hash := hashDatum(&node)
 	hashString := ConvertHashBytesToString(hash[:])
 	hashMap[hashString] = node
 	return hash, nil
