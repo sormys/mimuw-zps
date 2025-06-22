@@ -73,7 +73,9 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 
 		if info.Err != nil {
-			UDPHolePunch(conn, peer, nickname)
+			for range 5 {
+				UDPHolePunch(conn, peer, nickname)
+			}
 		}
 		info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 		decoded, err := pmp.DecodeMessage(info)
@@ -105,96 +107,49 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, pee
 
 	hash := mt.ConvertHashBytesToString(receivedData.Hash[:])
 	tree := mt.NewRemoteMerkleTree(hash)
-	ch := make(chan discoveredType, 1)
-
-	discoverNodeType(conn, peer, hash, tree, ch)
-
-	dscvType := <-ch
-
-	if dscvType.err != nil {
-		slog.Warn("Error while trying to discover root type", "peer", peer.Name, "err", dscvType.err)
-		return mm.TuiError(dscvType.err.Error())
+	request := pmp.DatumRequestMsg{
+		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+		Hash:            receivedData.Hash,
 	}
-	if dscvType.cacheType == mt.DIRECTORY || dscvType.cacheType == mt.CHUNK {
-		slog.Debug("Invalid read from cache - there should not be a cache hit during content reload",
-			"peer", peer.Name, "err", err)
-		return mm.ConvertErrorToTuiMessage(err)
+	data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
+		networking.NewRetryPolicyRequest())
+
+	if data.Err != nil {
+		return mm.TuiError("Failed to get response from peer")
 	}
-	subfolders := []mm.TUIFolder{}
-	files := []handler.File{}
+	dscvType := decodeDatumResponse(hash, data)
 	if dscvType.msg.NodeType == mt.DIRECTORY {
-		if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
+		if err := tree.DiscoverAsDirectory(hash, dscvType.msg.Children); err != nil {
 			return mm.TuiError(err.Error())
 		}
-
-		for _, child := range dscvType.msg.Children.Records {
-			childHash := mt.ConvertHashBytesToString(child.Hash)
-			ch := make(chan discoveredType, 1)
-			discoverNodeType(conn, peer, childHash, tree, ch)
-			childType := <-ch
-			if childType.err != nil {
-				slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", childHash, "err", childType.err)
-				return mm.TuiError(childType.err.Error())
-			}
-			if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
-				continue
-			}
-			if childType.msg.NodeType == mt.DIRECTORY {
-				if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
-					return mm.TuiError(err.Error())
-				}
-				folder := mm.TUIFolder{
-					Hash:       childType.msg.Hash,
-					Name:       child.Name,
-					Path:       "root/" + child.Name,
-					Files:      []handler.File{},
-					Subfolders: nil,
-					Loaded:     false,
-					Expanded:   false,
-				}
-				subfolders = append(subfolders, folder)
-			}
-			if childType.msg.NodeType == mt.CHUNK {
-				if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
-					return mm.TuiError(err.Error())
-				}
-				file := handler.File{
-					Hash: childType.msg.Hash,
-					Name: child.Name,
-					Path: "root/" + child.Name,
-				}
-				files = append(files, file)
-			}
+	}
+	if dscvType.msg.NodeType == mt.CHUNK {
+		if err := tree.DiscoverAsChunk(hash, dscvType.msg.Data); err != nil {
+			return mm.TuiError(err.Error())
 		}
 	}
-	//how to get name of file when root is only one file ?
-	if dscvType.msg.NodeType == mt.CHUNK {
-		file := handler.File{
-			Hash: dscvType.msg.Hash,
-			Name: "pliczek",
-			Path: "root/" + "pliczek",
+	if dscvType.msg.NodeType == mt.BIG {
+		if err := tree.DiscoverAsBig(hash, dscvType.msg.Children); err != nil {
+			return mm.TuiError(err.Error())
 		}
-		files = append(files, file)
-		if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
-			return mm.TuiError(dscvType.err.Error())
-		}
+	}
+	subfolders, files, err := getFoldersAndFiles(tree.GetNode(hash), peer, "root", tree, conn)
+	if err != nil {
+		return mm.TuiError(err.Error())
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	peersTrees[peer.Name] = tree
-	folder := mm.TUIFolder{
-		Hash:       handler.Hash{},
+	folder := message_manager.TUIFolder{
 		Name:       "root",
 		Path:       "root",
 		Files:      files,
 		Subfolders: subfolders,
-		Loaded:     false,
-		Expanded:   false,
+		Loaded:     true,
+		Expanded:   true,
 	}
-
-	return mm.CreateTuiFolders(folder)
-
+	return message_manager.CreateTuiFolders(folder)
 }
 
 // return a list with available peers
@@ -296,7 +251,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, node
 	}
 }
 func getFoldersAndFiles(node *mt.RemoteNode,
-	message mm.BasicFolder,
+	peer networking.Peer,
 	path string,
 	tree mt.RemoteMerkleTree,
 	conn packet_manager.PacketConn) ([]mm.TUIFolder, []handler.File, error) {
@@ -306,10 +261,10 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 	for _, child := range node.Children() {
 		childHash := child.Hash()
 		ch := make(chan discoveredType, 1)
-		discoverNodeType(conn, message.Peer, childHash, tree, ch)
+		discoverNodeType(conn, peer, childHash, tree, ch)
 		childType := <-ch
 		if childType.err != nil {
-			slog.Warn("Error discovering child node type", "peer", message.Peer.Name, "childHash", childHash, "err", childType.err)
+			slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", childHash, "err", childType.err)
 			return subfolders, files, childType.err
 		}
 		if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
@@ -373,7 +328,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	// FIXME(sormys) this should probably be an option in packet manager, for now,
 	// ignoring issue of creating multiple coroutines here
 	// responseChan := make(chan discoveredType, len(node.Children()))
-	subfolders, files, err := getFoldersAndFiles(node, message, message.Path, tree, conn)
+	subfolders, files, err := getFoldersAndFiles(node, message.Peer, message.Path, tree, conn)
 	if err != nil {
 		return mm.TuiError(err.Error())
 	}
