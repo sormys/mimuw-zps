@@ -480,9 +480,21 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 				Hash:            handler.Hash(hashBytes),
 			}
-			// FIXME(sormys) send to all addresses, check if any address available
-			data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
-				networking.NewRetryPolicyRequest())
+
+			resultCh := make(chan networking.ReceivedMessageData, len(peer.Addresses))
+			for _, addr := range peer.Addresses {
+				go func(addr net.Addr) {
+					data := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+					resultCh <- data
+				}(addr)
+			}
+			var data networking.ReceivedMessageData
+			for range peer.Addresses {
+				data = <-resultCh
+				if data.Err == nil {
+					break
+				}
+			}
 
 			if data.Err != nil {
 				slog.Warn("Error while receiving reply", "err", data.Err)
@@ -609,7 +621,6 @@ func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 		return mm.TuiError("Failed to download file data")
 	}
 
-	// Save data to tmp.tmp file
 	slog.Debug("Downloaded file data", "data", message.Name)
 	path, err := getDownloadPath(message.Peer.Name, message.Name)
 	if err != nil {
@@ -631,7 +642,6 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 
 	var mutex sync.Mutex
 	var data mm.TuiMessage
-	// var err error
 
 	peersTrees := map[string]mt.RemoteMerkleTree{}
 
@@ -639,15 +649,14 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 		go func(message mm.TuiMessage) {
 			switch message.RequestType() {
 			case mm.CONNECT:
-				{
-					// Expected output is peer when after successful handshake. You can use
-					data = StartConnection(conn, message.Payload().([]networking.Peer)[0], nickname)
-				}
+				data = StartConnection(conn, message.Payload().([]networking.Peer)[0], nickname)
+			case mm.EXPAND_FOLDER:
+				data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
+			case mm.DOWNLOAD:
+				data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
+
 			case mm.RELOAD_CONTENT:
 				{
-					// data = ReloadPeerContent(conn, message.Payload().(mm.TuiMessageBasicInfo))
-
-					// in this state handler should reset all his states!
 					mutex.Lock()
 					for k := range peersTrees {
 						delete(peersTrees, k)
@@ -655,24 +664,9 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 					mutex.Unlock()
 					data = ReloadAvailablePeers(server)
 				}
-			case mm.EXPAND_FOLDER:
-				{
-					// In this case the folder's contens are not yet loaded in the TUI.
-					// Check if the contents are available in the cache. If not,
-					// send a request to fetch data. Expected output is TuiMessage -> see expandFolder
-
-					data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
-				}
-			case mm.DOWNLOAD:
-				{
-					data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
-				}
-
 			case mm.SHOW_DATA:
 				{
-					// In this case we want discover user's file. So you have to sent RootRequest
 					user := message.Payload().([]networking.Peer)[0]
-					// Expected output is TuiMessage -> see expand Folder
 					data = ReloadPeerContent(conn, user, peersTrees, &mutex)
 				}
 			}
