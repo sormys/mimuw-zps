@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"mimuw_zps/src/handler"
 	"mimuw_zps/src/message_manager"
-	"mimuw_zps/src/networking/peer_conn"
+	"mimuw_zps/src/networking"
 	"os"
 	"strings"
 
@@ -25,8 +25,8 @@ const (
 type model struct {
 	state        state
 	cursor       int
-	users        []peer_conn.Peer
-	selectedUser peer_conn.Peer
+	users        []networking.Peer
+	selectedUser networking.Peer
 	tuiSender    chan<- message_manager.TuiMessage
 	tuiReceiver  <-chan message_manager.TuiMessage
 
@@ -48,10 +48,10 @@ type VisibleItem struct {
 
 // Marks a user as connected. We dont have a lots of users that's why
 // linear complexity is acceptable
-func (m *model) updateUserState(user peer_conn.Peer) {
+func (m *model) updateUserState(user networking.Peer) {
 	for i, u := range m.users {
 		if u.Name == user.Name {
-			m.users[i].Stage = peer_conn.CONNECT
+			m.users[i].Stage = networking.CONNECT
 			break
 		}
 	}
@@ -95,7 +95,7 @@ func (m *model) showTree() string {
 	var arrow string
 	for i := 0; i < len(m.VisibleItems); i++ {
 		object := m.VisibleItems[i]
-		spaces := strings.Repeat(" ", object.Depth)
+		spaces := strings.Repeat("  ", object.Depth)
 
 		if object.isFolder {
 			mark = "/"
@@ -115,11 +115,12 @@ func (m *model) showTree() string {
 
 func initialModel(received <-chan message_manager.TuiMessage,
 	sender chan<- message_manager.TuiMessage,
-	users []peer_conn.Peer) *model {
+	users []networking.Peer) *model {
 	return &model{
 		root: message_manager.TUIFolder{
 			Name:     "root",
 			Path:     "root",
+			Hash:     handler.Hash{},
 			Loaded:   false,
 			Expanded: false,
 		},
@@ -149,7 +150,6 @@ func findFolder(folder *message_manager.TUIFolder, path string) *message_manager
 
 // Receives external data and updates internal states
 func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
-
 	switch message.RequestType() {
 
 	case message_manager.FOLDER_TUI:
@@ -169,7 +169,7 @@ func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
 
 	case message_manager.PEERS_TUI:
 
-		peers := message.Payload().([]peer_conn.Peer)
+		peers := message.Payload().([]networking.Peer)
 		if !m.initialState {
 			m.infoOutside = "Refreshed the content"
 		}
@@ -178,13 +178,13 @@ func (m *model) manageOutsideInfo(message message_manager.TuiMessage) {
 		m.initialState = false
 		m.cursor = 0
 		m.users = peers
-		m.selectedUser = peer_conn.Peer{}
+		m.selectedUser = networking.Peer{}
 		m.VisibleItems = nil
 
 	case message_manager.CONNECT:
-		peer := (message.Payload().([]peer_conn.Peer)[0])
+		peer := (message.Payload().([]networking.Peer)[0])
 		m.updateUserState(peer)
-		m.selectedUser.Stage = peer_conn.CONNECT
+		m.selectedUser.Stage = networking.CONNECT
 		m.infoOutside = "Successful connected with " + peer.Name
 
 	case message_manager.INFO_TUI:
@@ -220,7 +220,6 @@ func (m model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
-
 	case message_manager.TuiMessage:
 		m.manageOutsideInfo(msg)
 		return m, waitForOutsideInfo(m.tuiReceiver)
@@ -240,7 +239,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case USER_INFO:
-				m.selectedUser = peer_conn.Peer{}
+				m.selectedUser = networking.Peer{}
 				m.state = CHOOSE_USER
 				m.cursor = 0
 			}
@@ -263,7 +262,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tuiSender <- message_manager.InitConnectionMessage(m.selectedUser)
 			}
 		case "d":
-			if m.state == USER_INFO && m.selectedUser.Stage == peer_conn.CONNECT {
+			if m.state == USER_INFO && m.selectedUser.Stage == networking.CONNECT {
 				m.selectedUser = m.users[m.cursor]
 				m.cursor = 0
 				m.tuiSender <- message_manager.InitGetDataMessage(m.selectedUser)
@@ -285,6 +284,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if folder == nil {
 						break
 					}
+
 					if folder.Expanded {
 						folder.Expanded = false
 						m.buildVisible()
@@ -329,7 +329,7 @@ func (m *model) View() string {
 		for _, addr := range m.selectedUser.Addresses {
 			s += fmt.Sprintf("  %s\n", addr)
 		}
-		if m.selectedUser.Stage == peer_conn.CONNECT {
+		if m.selectedUser.Stage == networking.CONNECT {
 			s += "\nPress [d] to display data"
 		} else {
 			s += "\nPress [c] to connect"
@@ -362,7 +362,7 @@ func (m *model) View() string {
 
 func TuiManager(received <-chan message_manager.TuiMessage,
 	sender chan<- message_manager.TuiMessage,
-	users []peer_conn.Peer) {
+	users []networking.Peer) {
 
 	p := tea.NewProgram(initialModel(received, sender, users))
 	if _, err := p.Run(); err != nil {

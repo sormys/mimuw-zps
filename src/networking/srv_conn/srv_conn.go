@@ -8,7 +8,6 @@ import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
-	"mimuw_zps/src/networking/peer_conn"
 	"mimuw_zps/src/utility"
 	"net/http"
 	"net/url"
@@ -162,8 +161,8 @@ func (s Server) GetPeerAddresses(nickname string) ([]string, error) {
 }
 
 // Get all required info about active Peers without me
-func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
-	var peers []peer_conn.Peer
+func (s Server) GetInfoPeers() ([]networking.Peer, []error) {
+	var peers []networking.Peer
 	var errors []error
 	nicknames, err := s.GetPeers()
 	if err != nil {
@@ -189,7 +188,7 @@ func (s Server) GetInfoPeers() ([]peer_conn.Peer, []error) {
 		if nick == nicknames[i] {
 			continue
 		}
-		peers = append(peers, peer_conn.NewPeer(nicknames[i], addresses, key))
+		peers = append(peers, networking.NewPeer(nicknames[i], addresses, key))
 	}
 	return peers, errors
 }

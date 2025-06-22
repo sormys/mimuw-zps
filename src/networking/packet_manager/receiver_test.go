@@ -65,7 +65,7 @@ func TestReceiverIncorrectLenMessages(t *testing.T) {
 	data = append(data, []byte("TestName")...)             // name
 	data = append(data, []byte{0x00, 0x00, 0x00, 0x00}...) // signature
 	id := utility.GenerateID()
-	msg := createMessage(messType, data, len(data)-2, id) // message with incrrect len
+	msg := createMessage(messType, data, len(data)+2, id) // message with incrrect len
 
 	// Mock objects
 	replyChan := make(chan networking.ReceivedMessageData)

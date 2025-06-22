@@ -3,6 +3,7 @@ package merkle_tree
 import (
 	"crypto/sha256"
 	"errors"
+	"log/slog"
 )
 
 // This tree is most likely not complete, and is constructed by adding nodes
@@ -32,6 +33,15 @@ type RemoteNode struct {
 
 func (r RemoteNode) Type() NodeType {
 	return r.nodeType
+}
+
+// Represents type represented in file system - Big node can represent part of dir of file
+func (r RemoteNode) IsDir() bool {
+	return r.Type() == DIRECTORY || r.hasDirectoryChild
+}
+
+func (r RemoteNode) IsFile() bool {
+	return r.Type() == CHUNK || r.hasChunkChild
 }
 
 func (r RemoteNode) Name() string {
@@ -120,6 +130,7 @@ func (rmt *RemoteMerkleTree) GetNode(hash string) *RemoteNode {
 // if provided data is correct in merkle tree. If error occurs,
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error {
+
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -131,8 +142,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 	if data == nil {
 		return errors.New("chunk cannot have nil data")
 	}
-	expectedHash := hashData([][]byte{data})
-	if expectedHash != nodeHash {
+	expectedHash := hashData([][]byte{{0x00}, data})
+	if expectedHash != node.hash {
 		return errors.New("invalid data (hashes do not match)")
 	}
 	if node.parent != nil {
@@ -152,7 +163,7 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	nodeHash string,
-	children []DirectoryRecordRaw) error {
+	children DirectoryRecords) error {
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -164,12 +175,10 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 		return errors.New("this node already has children, cannot convert to directory node")
 	}
 
-	hash := sha256.New()
-	for _, ch := range children {
-		hash.Write(ch.Hash)
-	}
-	hashStr := ConvertHashToString(hash)
+	hash := sha256.Sum256(children.Raw)
+	hashStr := ConvertHashBytesToString(hash[:])
 	if hashStr != node.hash {
+		slog.Error("failed to verify hashes:", "requested", nodeHash, "children", children, "got", hashStr)
 		return errors.New("invalid children (hashes do not match)")
 	}
 	if node.parent != nil {
@@ -177,8 +186,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 			return err
 		}
 	}
-	newChildren := make([]*RemoteNode, len(children))
-	for i, ch := range children {
+	newChildren := make([]*RemoteNode, len(children.Records))
+	for i, ch := range children.Records {
 		hashStr := ConvertHashBytesToString(ch.Hash)
 		newChildren[i] = &RemoteNode{name: ch.Name, parent: node,
 			hash: ConvertHashBytesToString(ch.Hash), nodeType: NO_TYPE}
@@ -194,7 +203,7 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsBig(
 	nodeHash string,
-	childrenHashes [][]byte) error {
+	children DirectoryRecords) error {
 	node, exist := rmt.nodeMap[nodeHash]
 	if !exist {
 		return errors.New("no node with given hash found")
@@ -206,17 +215,14 @@ func (rmt *RemoteMerkleTree) DiscoverAsBig(
 		return errors.New("this node already has children, cannot convert to big node")
 	}
 
-	hash := sha256.New()
-	for _, chHash := range childrenHashes {
-		hash.Write(chHash)
-	}
-	hashStr := ConvertHashToString(hash)
+	hash := sha256.Sum256(children.Raw)
+	hashStr := ConvertHashBytesToString(hash[:])
 	if hashStr != node.hash {
 		return errors.New("invalid children (hashes do not match)")
 	}
-	newChildren := make([]*RemoteNode, len(childrenHashes))
-	for i, chHash := range childrenHashes {
-		strHash := ConvertHashBytesToString(chHash)
+	newChildren := make([]*RemoteNode, len(children.Records))
+	for i, ch := range children.Records {
+		strHash := ConvertHashBytesToString(ch.Hash)
 		newChildren[i] = &RemoteNode{hash: strHash,
 			parent: node, nodeType: NO_TYPE}
 		rmt.nodeMap[strHash] = newChildren[i]

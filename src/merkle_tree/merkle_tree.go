@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"hash"
+	"mimuw_zps/src/handler"
 )
 
 type NodeType string
@@ -22,6 +23,23 @@ func hashData(childrenHash [][]byte) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+func hashDatum(data Datum) handler.Hash {
+	h := sha256.New()
+	var nodeTypeByte byte
+	switch data.NodeType {
+	case CHUNK:
+		nodeTypeByte = 0
+	case DIRECTORY:
+		nodeTypeByte = 1
+	case BIG:
+		nodeTypeByte = 2
+	}
+	h.Write([]byte{nodeTypeByte})
+	h.Write(data.Data)
+	var out handler.Hash
+	copy(out[:], h.Sum(nil))
+	return out
+}
 
 func ConvertHashToString(hash hash.Hash) string {
 	return hex.EncodeToString(hash.Sum(nil))
@@ -35,7 +53,12 @@ func ConvertStringHashToBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
-type DirectoryRecordRaw struct {
+type DirectoryRecords struct {
+	Records []DirectoryRecord
+	Raw     []byte
+}
+
+type DirectoryRecord struct {
 	Name string
 	Hash []byte
 }

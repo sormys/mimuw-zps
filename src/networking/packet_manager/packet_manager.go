@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/networking"
+	"mimuw_zps/src/utility"
 	"net"
 )
 
@@ -51,7 +52,7 @@ func (pc packetConn) SendRequest(addr net.Addr,
 		return networking.ReceivedMessageData{
 			Err: errors.New("system overloaded, could not send request. Try again later")}
 	}
-	slog.Debug("Sent request, awaiting reply", "addr", addr.String())
+	slog.Debug("Sent request, awaiting reply", "addr", addr.String(), "mess type", networking.TypeMap[utility.GetMessageType(message)])
 	recvData := <-callbackChan
 	return recvData
 }

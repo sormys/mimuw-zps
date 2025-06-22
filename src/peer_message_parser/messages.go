@@ -10,9 +10,13 @@ import (
 	"net"
 )
 
-const EXTENSIONS_LEN = 32
+const EXTENSIONS_LEN = 4
 
 type Extensions [EXTENSIONS_LEN]byte
+
+func GetExtensions() Extensions {
+	return Extensions{0x00, 0x00, 0x00, 0x00}
+}
 
 type PeerMessage interface {
 	Raw() encryption.Message
@@ -61,7 +65,7 @@ type SignedMessage struct {
 }
 
 func (sm SignedMessage) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(sm.raw[:networking.MIN_HELLO_SIZE+sm.length], sm.Signature, publicKey)
+	return encryption.VerifySignature(sm.raw[:networking.MIN_MESSAGE_SIZE+sm.length], sm.Signature, publicKey)
 }
 
 // ============================PingMsg==============================
@@ -107,10 +111,6 @@ func (hm HelloMsg) Type() networking.MessageType {
 	return networking.HELLO
 }
 
-func (hm HelloMsg) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(hm.raw[:networking.MIN_HELLO_SIZE+hm.length], hm.Signature, publicKey)
-}
-
 // ========================HelloReplyMsg============================
 
 type HelloReplyMsg struct {
@@ -123,14 +123,10 @@ func (hrm HelloReplyMsg) Type() networking.MessageType {
 	return networking.HELLO_REPLY
 }
 
-func (hrm HelloReplyMsg) VerifySignature(publicKey *ecdsa.PublicKey) bool {
-	return encryption.VerifySignature(hrm.raw[:networking.MIN_HELLO_SIZE+hrm.length], hrm.Signature, publicKey)
-}
-
 // ========================RootRequestMsg===========================
 
 type RootRequestMsg struct {
-	SignedMessage
+	UnsignedMessage
 }
 
 func (rr RootRequestMsg) Type() networking.MessageType {
@@ -175,14 +171,14 @@ type DatumMsg struct {
 	Hash     handler.Hash
 	NodeType merkle_tree.NodeType
 	Data     []byte
-	Children []merkle_tree.DirectoryRecordRaw
+	Children merkle_tree.DirectoryRecords
 }
 
 func (dr DatumMsg) Type() networking.MessageType {
 	return networking.DATUM
 }
 
-// =============================NoDatumMsg============================
+// =============================NoDatumMsg==========================
 
 type NoDatumMsg struct {
 	SignedMessage
@@ -194,3 +190,29 @@ func (dr NoDatumMsg) Type() networking.MessageType {
 }
 
 // TODO(sormys) add NatTraversal messages
+// ===========================NATTraversal==========================
+
+const (
+	IPV4_LEN = 6
+	IPV6_LEN = 18
+)
+
+type NATTraversal struct {
+	SignedMessage
+	Addr net.Addr
+}
+
+func (dr NATTraversal) Type() networking.MessageType {
+	return networking.NAT_TRAVERSAL
+}
+
+// ===========================NATTraversal2==========================
+
+type NATTraversal2 struct {
+	SignedMessage
+	Addr net.Addr
+}
+
+func (dr NATTraversal2) Type() networking.MessageType {
+	return networking.NAT_TRAVERSAL2
+}
