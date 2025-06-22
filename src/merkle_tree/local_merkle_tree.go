@@ -2,12 +2,14 @@ package merkle_tree
 
 import (
 	"io"
+	"log/slog"
 	"mimuw_zps/src/handler"
 	"os"
 )
 
 const MAX_CHUNK = 1024
 const MAX_CHILDREN_SIZE = 32
+const MAX_DIRECTORY = 16
 const DIR_HALF_ENTRY = 32
 
 type Datum struct {
@@ -84,7 +86,11 @@ func buildBigNode(hashes []handler.Hash) (handler.Hash, error) {
 func buildFileNode(path string) (handler.Hash, error) {
 	chunks, err := chunkFile(path)
 	if len(chunks) == 0 {
-		return handler.Hash{}, err
+		node := Datum{NodeType: CHUNK, Data: []byte{}}
+		hash := hashDatum(&node)
+		hashString := ConvertHashBytesToString(hash[:])
+		hashMap[hashString] = node
+		return handler.Hash(hash), nil
 	}
 	if err != nil {
 		return handler.Hash{}, err
@@ -99,37 +105,45 @@ func buildDirectory(path string) (handler.Hash, error) {
 		return handler.Hash{}, err
 	}
 	if len(items) == 0 {
-		return handler.Hash{}, nil
+		node := Datum{NodeType: DIRECTORY, Data: []byte{}, Children: []string{}}
+		hash := hashDatum(&node)
+		hashString := ConvertHashBytesToString(hash[:])
+		hashMap[hashString] = node
+		return handler.Hash(hash), nil
 	}
+	var dirHashes []handler.Hash
+	for i := 0; i < len(items); i += MAX_DIRECTORY {
+		end := min(i+MAX_DIRECTORY, len(items))
+		fragment := items[i:end]
 
-	var hashes []byte
-	var children []string
-	for _, item := range items {
-		newPath := path + "/" + item.Name()
-		var childHash handler.Hash
-		if item.IsDir() {
-			childHash, err = buildDirectory(newPath)
-		} else {
-			childHash, err = buildFileNode(newPath)
+		var hashes []byte
+		var children []string
+		for _, item := range fragment {
+			newPath := path + "/" + item.Name()
+			var childHash handler.Hash
+			if item.IsDir() {
+				childHash, err = buildDirectory(newPath)
+			} else {
+				childHash, err = buildFileNode(newPath)
+			}
+			if err != nil {
+				return handler.Hash{}, err
+			}
+			hashes = append(hashes, getNameBytes(item.Name())...)
+			hashes = append(hashes, childHash[:]...)
+			children = append(children, ConvertHashBytesToString(childHash[:]))
 		}
-		if err != nil {
-			return handler.Hash{}, err
-		}
-
-		hashes = append(hashes, getNameBytes(item.Name())...)
-		hashes = append(hashes, childHash[:]...)
-		children = append(children, ConvertHashBytesToString(childHash[:]))
+		node := Datum{NodeType: DIRECTORY, Data: hashes, Children: children}
+		hash := hashDatum(&node)
+		hashString := ConvertHashBytesToString(hash[:])
+		hashMap[hashString] = node
+		dirHashes = append(dirHashes, node.Hash)
 	}
-
-	if err != nil {
-		return handler.Hash{}, err
+	slog.Debug("number of directory hashes", "count", len(dirHashes))
+	if len(dirHashes) == 1 {
+		return dirHashes[0], nil
 	}
-	node := Datum{NodeType: DIRECTORY, Data: hashes, Children: children}
-	hash := hashDatum(&node)
-	hashString := ConvertHashBytesToString(hash[:])
-	hashMap[hashString] = node
-	return hash, nil
-
+	return buildBigNode(dirHashes)
 }
 
 func InitMerkleTree(path string) error {
