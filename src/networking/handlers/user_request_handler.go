@@ -539,8 +539,8 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 
 func cacheFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	tree mt.RemoteMerkleTree, nodeHash string) error {
-	reqCh := make(chan string, 1000) // Allow for very big files
-	resCh := make(chan int, 1000)    // result is how many new nodes have to be queried, -1 means that error has occured
+	reqCh := make(chan string, 1000000) // Allow for very big files
+	resCh := make(chan int, 1000)       // result is how many new nodes have to be queried, -1 means that error has occured
 	stopCh := make(chan bool)
 	for range DOWNLOAD_THREADS {
 		go cacheNodeWorker(conn, tree, message.Peer, reqCh, resCh, stopCh)
