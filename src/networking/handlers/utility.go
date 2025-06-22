@@ -13,19 +13,44 @@ import (
 )
 
 type PeerStatus struct {
-	outgoing bool
-	lastPing time.Time
-	peer     networking.Peer
+	outgoing   bool
+	lastPing   time.Time
+	peer       networking.Peer
+	extensions pmp.Extensions
 }
 
 var connectedPeers map[string]PeerStatus
 var mutex sync.Mutex
 
-func connectPeer(outgoing bool, peer networking.Peer) {
+func init() {
+	connectedPeers = map[string]PeerStatus{}
+	mutex = sync.Mutex{}
+}
+
+func ConnectPeer(outgoing bool, peer networking.Peer, extensions pmp.Extensions) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	connectedPeers[peer.Name] = PeerStatus{outgoing: outgoing,
-		lastPing: time.Now(), peer: peer}
+		lastPing: time.Now(), peer: peer, extensions: extensions}
+}
+
+func GetPeersWithExtension(extesionsMask pmp.Extensions) []networking.Peer {
+	mutex.Lock()
+	defer mutex.Unlock()
+	foundPeers := []networking.Peer{}
+	for _, peer := range connectedPeers {
+		hasExtensions := true
+		for i := range peer.extensions {
+			if peer.extensions[i]&extesionsMask[i] != extesionsMask[i] {
+				hasExtensions = false
+				break
+			}
+		}
+		if hasExtensions {
+			foundPeers = append(foundPeers, peer.peer)
+		}
+	}
+	return foundPeers
 }
 
 func tryPingPeer(conn packet_manager.PacketConn, peer networking.Peer) {

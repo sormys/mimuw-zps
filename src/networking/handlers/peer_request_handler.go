@@ -54,15 +54,14 @@ func sendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
 func handleHello(conn packet_manager.PacketConn, addr net.Addr, hello pmp.HelloMsg,
 	server srv_conn.Server, nickname string) error {
 
-	slog.Debug("Responding to HELLO message", "id", hello.ID, "addr", addr)
-	key, err := server.GetPeerKey(hello.Name)
+	peer, err := server.GetInfoPeer(hello.Name)
 
 	if err != nil {
 		slog.Error("Failed to get peer key", "error", err)
 		return err
 	}
 
-	if !hello.VerifySignature(encryption.ParsePublicKey(key)) {
+	if !hello.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
 		slog.Debug("Failed to verify signature")
 		return errors.New("failed to verify signature in hello reply")
 	}
@@ -74,6 +73,8 @@ func handleHello(conn packet_manager.PacketConn, addr net.Addr, hello pmp.HelloM
 		Name:          nickname,
 	}
 	conn.SendReply(addr, pmp.EncodeMessage(message))
+	outgoing := peer.Name == srv_conn.GALENE // Nasty trick to refresh connection with the server
+	ConnectPeer(outgoing, peer, hello.Extensions)
 	return nil
 }
 

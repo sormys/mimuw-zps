@@ -21,7 +21,7 @@ import (
 	"sync"
 )
 
-const DOWNLOAD_THREADS = 10
+const DOWNLOAD_THREADS = 20
 const DOWNLOAD = "Download"
 
 func getDownloadPath(path string) (string, error) {
@@ -77,18 +77,33 @@ func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.
 	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
 }
 
-func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname string) {
-	addr, _ := net.ResolveUDPAddr("udp", "51.210.14.2:8443") // temporrily hard coded galene ip
-	request := pmp.NATTraversal{
-		SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-		Addr:          peer.Addresses[0],
-	}
-	reply := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
-	decoded, _ := pmp.DecodeMessage(reply)
-	slog.Error("Got reply for natraversal", "reply", decoded)
-	switch msg := decoded.(type) {
-	case pmp.ErrorMsg:
-		slog.Error("Got ERROR for natraversal", "msessagae", msg.Message)
+func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname string, maxTries int) {
+	slog.Info("Trying to hole punch", "dst nickname", nickname)
+	NATTraversalExtension := pmp.Extensions{0x0, 0x0, 0x0, 0x1}
+	peers := GetPeersWithExtension(NATTraversalExtension)
+	slog.Debug("Found peers able to hole punch", "peer count", len(peers))
+	successful := 0
+	for _, through := range peers {
+		for range max(1, maxTries/2) {
+			for _, addr := range through.Addresses {
+				request := pmp.NATTraversal{
+					SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+					Addr:          peer.Addresses[0],
+				}
+				slog.Debug("Requesting hole puch", "to", nickname, "through", through.Name)
+				reply := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+				decoded, _ := pmp.DecodeMessage(reply)
+				switch msg := decoded.(type) {
+				case pmp.ErrorMsg:
+					slog.Error("Got error for natraversal", "msessagae", msg.Message)
+				case pmp.PongMsg:
+					successful++
+					if successful >= maxTries {
+						return
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -106,9 +121,7 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 			info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 
 			if info.Err != nil {
-				for range 5 {
-					UDPHolePunch(conn, peer, nickname)
-				}
+				UDPHolePunch(conn, peer, nickname, 5)
 			}
 			info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 			decoded, _ := pmp.DecodeMessage(info)
