@@ -24,9 +24,13 @@ func RunPeerRequestHandler(conn packet_manager.PacketConn, tuiSender chan<- mess
 			case pmp.HelloMsg:
 				err = handleHello(conn, data.Addr, msg, server, nickname)
 			case pmp.RootRequestMsg:
-				err = handleRootRequest(conn, data.Addr, msg)
+				if ContainsUser(data.Addr) {
+					err = handleRootRequest(conn, data.Addr, msg)
+				}
 			case pmp.DatumRequestMsg:
-				err = handleDatumRequest(conn, data.Addr, msg)
+				if ContainsUser(data.Addr) {
+					err = handleDatumRequest(conn, data.Addr, msg)
+				}
 			case pmp.PingMsg:
 				err = handlePing(conn, data.Addr, msg)
 			case pmp.NATTraversal2:

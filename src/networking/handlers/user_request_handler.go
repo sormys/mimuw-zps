@@ -225,7 +225,7 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, pee
 func ReloadAvailablePeers(server srv_conn.Server) mm.TuiMessage {
 	peers, err := server.GetInfoPeers()
 	if err != nil {
-		return mm.ConvertErrorsToTuiMessage(err)
+		slog.Warn("GetInfoPeers returned errors", "errors", err)
 	}
 	return mm.CreateListPeers(peers)
 }
@@ -648,6 +648,10 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 
 					// in this state handler should reset all his states!
 
+					for k := range peersTrees {
+						delete(peersTrees, k)
+					}
+					ClearMap()
 					data = ReloadAvailablePeers(server)
 				}
 			case mm.EXPAND_FOLDER:

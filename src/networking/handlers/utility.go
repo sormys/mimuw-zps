@@ -113,6 +113,27 @@ func RunAutoRefreshConnections(conn packet_manager.PacketConn) {
 	}
 }
 
+func ClearMap() {
+	mutex.Lock()
+	defer mutex.Unlock()
+	for k := range connectedPeers {
+		delete(connectedPeers, k)
+	}
+}
+
+func ContainsUser(addr net.Addr) bool {
+	mutex.Lock()
+	defer mutex.Unlock()
+	for _, status := range connectedPeers {
+		for _, a := range status.peer.Addresses {
+			if a.String() == addr.String() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func printAddreses(addresses []net.Addr) string {
 	result := make([]string, len(addresses))
 
