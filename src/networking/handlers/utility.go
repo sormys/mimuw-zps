@@ -70,15 +70,16 @@ func tryPingPeer(conn packet_manager.PacketConn, peer networking.Peer) {
 			slog.Warn("Received error reply to ping", "nickname", peer.Name, "message", msg.Message)
 		case pmp.PongMsg:
 			mutex.Lock()
-			defer mutex.Unlock()
 			status, exists := connectedPeers[peer.Name]
 			if !exists {
 				slog.Debug("Pinged user that is no longer connected", "nickname", peer.Name)
+				mutex.Unlock()
 				return
 			}
 			status.lastPing = time.Now()
 			connectedPeers[peer.Name] = status
 			slog.Debug("Connection refreshed!", "peer", peer.Name)
+			mutex.Unlock()
 			continue
 		default:
 			slog.Warn("Received unexpected reply to ping", "nickname", peer.Name, "message type", msg.Type())

@@ -240,8 +240,11 @@ func getNameFromBytes(nameBytes [32]byte) (string, error) {
 			break
 		}
 	}
+	if i == 0 {
+		return "", nil
+	}
 	importantBytes := nameBytes[:min(i, 30)+1]
-	if i == 0 || !utf8.Valid(importantBytes) {
+	if !utf8.Valid(importantBytes) {
 		return "", errors.New("invalid name of file/directory")
 	}
 	return string(importantBytes), nil

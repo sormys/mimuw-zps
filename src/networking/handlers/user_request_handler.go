@@ -81,8 +81,8 @@ func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.
 	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
 }
 
-func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname string, maxTries int) {
-	slog.Info("Trying to hole punch", "dst nickname", nickname)
+func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, peerAddr net.Addr, nickname string, maxTries int) {
+	slog.Info("Trying to hole punch", "dst nickname", peer.Name)
 	NATTraversalExtension := pmp.Extensions{0x0, 0x0, 0x0, 0x1}
 	peers := GetPeersWithExtension(NATTraversalExtension)
 	slog.Debug("Found peers able to hole punch", "peer count", len(peers))
@@ -92,9 +92,9 @@ func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname
 			for _, addr := range through.Addresses {
 				request := pmp.NATTraversal{
 					SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-					Addr:          peer.Addresses[0],
+					Addr:          peerAddr,
 				}
-				slog.Debug("Requesting hole puch", "to", nickname, "through", through.Name)
+				slog.Debug("Requesting hole puch", "to", peer.Name, "through", through.Name)
 				reply := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
 				decoded, _ := pmp.DecodeMessage(reply)
 				switch msg := decoded.(type) {
@@ -125,7 +125,7 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 			info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 
 			if info.Err != nil {
-				UDPHolePunch(conn, peer, nickname, 5)
+				UDPHolePunch(conn, peer, addr, nickname, 5)
 			}
 			info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
 			decoded, err := pmp.DecodeMessage(info)
@@ -446,7 +446,6 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 		case <-stopCh:
 			return
 		case hash := <-reqCh:
-			slog.Debug("Caching node", "hash", hash)
 			// Already in Cache
 			if node := tree.GetNode(hash); node != nil && node.Type() != mt.NO_TYPE {
 				if node.IsDir() {

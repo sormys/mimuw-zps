@@ -41,7 +41,7 @@ func main() {
 	receiverCount := uint32(2)
 	myAddress := ":0"
 	server_url := "https://galene.org:8448"
-	n := "coleslaw"
+	n := "Urwipołeć śmierdzący groszem"
 
 	setupLogger()
 
