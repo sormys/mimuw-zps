@@ -195,6 +195,7 @@ func askForData(addr net.Addr,
 	}
 	return message_manager.CreateTuiFolders(folder)
 }
+
 func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
 	receivedData, err := sendRootRequest(conn, peer)
 	if err != nil {
