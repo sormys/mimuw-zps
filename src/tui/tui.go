@@ -302,7 +302,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.buildVisible()
 					}
 				} else {
-					m.infoOutside = "Start downloading" + item.Name
+					m.infoOutside = "Start downloading " + item.Name
 					m.tuiSender <- message_manager.DownloadFile(item.Hash, m.selectedUser, item.Name)
 				}
 				return m, nil

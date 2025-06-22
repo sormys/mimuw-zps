@@ -24,7 +24,7 @@ import (
 const DOWNLOAD_THREADS = 20
 const DOWNLOAD = "Download"
 
-func getDownloadPath(path string) (string, error) {
+func getDownloadPath(name string, path string) (string, error) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		return "", errors.New("failed to resolve project root path")
@@ -34,7 +34,11 @@ func getDownloadPath(path string) (string, error) {
 	if err := os.MkdirAll(downloadDir, 0755); err != nil {
 		return "", err
 	}
-	finalPath := filepath.Join(downloadDir, path)
+	userDir := filepath.Join(downloadDir, name)
+	if err := os.MkdirAll(userDir, 0755); err != nil {
+		return "", err
+	}
+	finalPath := filepath.Join(userDir, path)
 	return finalPath, nil
 }
 
@@ -606,7 +610,7 @@ func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 
 	// Save data to tmp.tmp file
 	slog.Debug("Downloaded file data", "data", message.Name)
-	path, err := getDownloadPath(message.Name)
+	path, err := getDownloadPath(message.Peer.Name, message.Name)
 	if err != nil {
 		return mm.TuiInfo("Failed to create Folder to downloading" + message.Name)
 	}
