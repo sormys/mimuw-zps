@@ -43,7 +43,7 @@ func main() {
 	server_url := "https://galene.org:8448"
 	path := "../../root"
 	// myReceiverCount := 1
-	n := "NapoleonZWiekszymBerlem"
+	n := "Belmondo"
 
 	setupLogger()
 

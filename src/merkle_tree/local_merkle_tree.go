@@ -2,7 +2,6 @@ package merkle_tree
 
 import (
 	"io"
-	"log/slog"
 	"mimuw_zps/src/handler"
 	"os"
 )
@@ -49,7 +48,6 @@ func chunkFile(path string) ([]handler.Hash, error) {
 		if n > 0 {
 			chunkData := make([]byte, n)
 			copy(chunkData, buf[:n])
-			chunkData = append([]byte{byte(0x00)}, chunkData...)
 			node := Datum{NodeType: CHUNK, Data: chunkData}
 			hash := hashDatum(&node)
 			hashString := ConvertHashBytesToString(hash[:])
@@ -74,8 +72,7 @@ func buildBigNode(hashes []handler.Hash) (handler.Hash, error) {
 			storedData = append(storedData, hashes[j][:]...)
 			children = append(children, ConvertHashBytesToString(hashes[j][:]))
 		}
-		data := append([]byte{byte(0x02)}, storedData...)
-		node := Datum{NodeType: BIG, Data: data, Children: children}
+		node := Datum{NodeType: BIG, Data: storedData, Children: children}
 		hash := hashDatum(&node)
 		hashString := ConvertHashBytesToString(hash[:])
 		hashMap[hashString] = node
@@ -111,10 +108,8 @@ func buildDirectory(path string) (handler.Hash, error) {
 		newPath := path + "/" + item.Name()
 		var childHash handler.Hash
 		if item.IsDir() {
-			slog.Warn("Building directory ", "path", newPath)
 			childHash, err = buildDirectory(newPath)
 		} else {
-			slog.Warn("Building File ", "path", newPath)
 			childHash, err = buildFileNode(newPath)
 		}
 		if err != nil {
@@ -129,7 +124,6 @@ func buildDirectory(path string) (handler.Hash, error) {
 	if err != nil {
 		return handler.Hash{}, err
 	}
-	hashes = append([]byte{byte(0x01)}, hashes...)
 	node := Datum{NodeType: DIRECTORY, Data: hashes, Children: children}
 	hash := hashDatum(&node)
 	hashString := ConvertHashBytesToString(hash[:])
