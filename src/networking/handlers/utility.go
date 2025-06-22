@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
-	"mimuw_zps/src/networking/srv_conn"
 	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
 	"net"
@@ -112,17 +111,6 @@ func RunAutoRefreshConnections(conn packet_manager.PacketConn) {
 		for _, peer := range peers {
 			go tryPingPeer(conn, peer)
 		}
-	}
-}
-
-func ClearMap() {
-	mutex.Lock()
-	defer mutex.Unlock()
-	for k, peer := range connectedPeers {
-		if peer.peer.Name == srv_conn.GALENE { // retain server connection
-			continue
-		}
-		delete(connectedPeers, k)
 	}
 }
 

@@ -21,7 +21,7 @@ import (
 	"sync"
 )
 
-const DOWNLOAD_THREADS = 20
+const DOWNLOAD_THREADS = 1
 const DOWNLOAD = "Download"
 
 func getDownloadPath(name string, path string) (string, error) {
@@ -162,7 +162,7 @@ func askForData(addr net.Addr,
 	tree mt.RemoteMerkleTree,
 	hash string,
 	peersTrees map[string]mt.RemoteMerkleTree,
-	peer networking.Peer) mm.TuiMessage {
+	peer networking.Peer, mutex *sync.Mutex) mm.TuiMessage {
 
 	data := conn.SendRequest(addr, pmp.EncodeMessage(request),
 		networking.NewRetryPolicyRequest())
@@ -221,7 +221,7 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, pee
 		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 		Hash:            receivedData.Hash,
 	}
-	return askForData(receivedData.Sender(), conn, request, tree, hash, peersTrees, peer)
+	return askForData(receivedData.Sender(), conn, request, tree, hash, peersTrees, peer, mutex)
 }
 
 // return a list with available peers
@@ -590,8 +590,8 @@ func downloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
 	treeMutex.Lock()
-	defer treeMutex.Unlock()
 	tree, exist := peersTrees[message.Peer.Name]
+	treeMutex.Unlock()
 	if !exist {
 		return mm.TuiError("No tree for given peer")
 	}
@@ -648,11 +648,11 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 					// data = ReloadPeerContent(conn, message.Payload().(mm.TuiMessageBasicInfo))
 
 					// in this state handler should reset all his states!
-
+					mutex.Lock()
 					for k := range peersTrees {
 						delete(peersTrees, k)
 					}
-					ClearMap()
+					mutex.Unlock()
 					data = ReloadAvailablePeers(server)
 				}
 			case mm.EXPAND_FOLDER:
