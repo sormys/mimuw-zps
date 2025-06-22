@@ -19,6 +19,8 @@ import (
 	"sync"
 )
 
+const DOWNLOAD_THREADS = 10
+
 // Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
 func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.RootReplyMsg, error) {
 	addr := peer.Addresses
@@ -250,6 +252,7 @@ func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, node
 		nodeHash = mt.ConvertHashBytesToString(hashBytes)
 	}
 }
+
 func getFoldersAndFiles(node *mt.RemoteNode,
 	peer networking.Peer,
 	path string,
@@ -325,9 +328,6 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	if node.Type() != mt.DIRECTORY {
 		return mm.TuiError("The node is not a directory")
 	}
-	// FIXME(sormys) this should probably be an option in packet manager, for now,
-	// ignoring issue of creating multiple coroutines here
-	// responseChan := make(chan discoveredType, len(node.Children()))
 	subfolders, files, err := getFoldersAndFiles(node, message.Peer, message.Path, tree, conn)
 	if err != nil {
 		return mm.TuiError(err.Error())
@@ -341,84 +341,163 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 		Expanded:   true,
 	}
 	return message_manager.CreateTuiFolders(folder)
-	// TODO(sormys) Gather types and send the info using standard inteface
 }
 
-func downloadSubtreeHelper(conn packet_manager.PacketConn, message mm.BasicFileInfo,
-	tree mt.RemoteMerkleTree, nodeHash string) []byte {
-	if node := tree.GetNode(nodeHash); node != nil && node.Type() != mt.NO_TYPE {
-		slog.Debug("Cache hit")
-		if node.IsDir() {
-			return nil
+func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
+	peer networking.Peer, reqCh chan string, resCh chan int, stopCh chan bool) {
+	tryDeferWork := func(hash string) bool {
+		select {
+		case reqCh <- hash:
+			return true
+		default:
+			slog.Error("File too big to download it efficiently")
+			resCh <- -1
+			return false
 		}
-		if node.Type() == mt.CHUNK {
-			return node.Data()
-		}
-		if node.Type() != mt.BIG {
-			return nil
-		}
-		var data bytes.Buffer
-		for _, ch := range node.Children() {
-			chData := downloadSubtreeHelper(conn, message, tree, ch.Hash())
-			if chData == nil {
-				return nil
+	}
+	for {
+		select {
+		case <-stopCh:
+			return
+		case hash := <-reqCh:
+			slog.Debug("Caching node", "hash", hash)
+			// Already in Cache
+			if node := tree.GetNode(hash); node != nil && node.Type() != mt.NO_TYPE {
+				if node.IsDir() {
+					resCh <- -1
+					continue
+				}
+				if node.Type() == mt.CHUNK {
+					resCh <- 0
+					continue
+				}
+				if node.Type() != mt.BIG {
+					resCh <- -1
+					continue
+				}
+				for _, ch := range node.Children() {
+					if ok := tryDeferWork(ch.Hash()); !ok {
+						break
+					}
+				}
+				resCh <- len(node.Children())
+				continue
 			}
-			data.Write(chData)
+			// Download
+			hashBytes, err := mt.ConvertStringHashToBytes(hash)
+			if err != nil {
+				resCh <- -1
+				slog.Warn("Failed to convert to bytes", "hash", hash)
+				continue
+			}
+			request := pmp.DatumRequestMsg{
+				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+				Hash:            handler.Hash(hashBytes),
+			}
+			// FIXME(sormys) send to all addresses, check if any address available
+			data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
+				networking.NewRetryPolicyRequest())
+
+			if data.Err != nil {
+				slog.Warn("Error while receiving reply", "err", data.Err)
+				resCh <- -1
+				continue
+			}
+			dscvType := decodeDatumResponse(hash, data)
+			if dscvType.err != nil {
+				slog.Warn("Error while decoding datum response", "err", dscvType.err)
+				resCh <- -1
+				continue
+			}
+			if dscvType.msg.NodeType == mt.CHUNK {
+				if err := tree.DiscoverAsChunk(hash, dscvType.msg.Data); err != nil {
+					slog.Warn("Error while discovering as chunk", "err", err)
+					resCh <- -1
+					continue
+				}
+				resCh <- 0
+				continue
+			}
+			if dscvType.msg.NodeType == mt.DIRECTORY {
+				resCh <- -1
+				slog.Warn("Invalid type(directory)", "hash", hash)
+				continue
+			}
+			if err := tree.DiscoverAsBig(hash, dscvType.msg.Children); err != nil {
+				resCh <- -1
+				continue
+			}
+			for _, ch := range dscvType.msg.Children.Records {
+				if ok := tryDeferWork(mt.ConvertHashBytesToString(ch.Hash)); !ok {
+					break
+				}
+			}
+			resCh <- len(dscvType.msg.Children.Records)
+			continue
 		}
-		return data.Bytes()
 	}
-	slog.Debug("No Cache")
+}
 
-	nodeBytes, err := mt.ConvertStringHashToBytes(nodeHash)
-	if err != nil {
-		slog.Warn("failed to convert")
-		return nil
+func cacheFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	tree mt.RemoteMerkleTree, nodeHash string) error {
+	reqCh := make(chan string, 100000) // Allow for very big files
+	resCh := make(chan int, 1000)      // result is how many new nodes have to be queried, -1 means that error has occured
+	stopCh := make(chan bool)
+	for range DOWNLOAD_THREADS {
+		go cacheNodeWorker(conn, tree, message.Peer, reqCh, resCh, stopCh)
 	}
-	request := pmp.DatumRequestMsg{
-		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-		Hash:            handler.Hash(nodeBytes),
+	closeWorkers := func() {
+		slog.Debug("Closing cache workers")
+		for range DOWNLOAD_THREADS {
+			stopCh <- true
+		}
 	}
-	// FIXME(sormys) send to all addresses, check if any address available
-	data := conn.SendRequest(message.Peer.Addresses[0], pmp.EncodeMessage(request),
-		networking.NewRetryPolicyRequest())
 
-	if data.Err != nil {
-		slog.Warn("Error while receiving reply", "err", data.Err)
-		return nil
-	}
-	dscvType := decodeDatumResponse(nodeHash, data)
-	if dscvType.err != nil {
-		slog.Warn("Error while decoding datum response", "err", dscvType.err)
-		return nil
-	}
-	if dscvType.msg.NodeType == mt.CHUNK {
-		if err := tree.DiscoverAsChunk(nodeHash, dscvType.msg.Data); err != nil {
-			slog.Warn("Error while discovering as chunk", "err", err)
+	reqCh <- nodeHash
+	remaining := 1
+	for {
+		newQueries := <-resCh
+		if newQueries == -1 {
+			closeWorkers()
+			return errors.New("unable to cache file")
+		}
+		remaining--
+		remaining += newQueries
+		if remaining == 0 {
+			closeWorkers()
 			return nil
 		}
-		return dscvType.msg.Data
 	}
-	if dscvType.msg.NodeType == mt.DIRECTORY {
+}
+
+func downloadSubtree(tree mt.RemoteMerkleTree, nodeHash string) []byte {
+	node := tree.GetNode(nodeHash)
+	if node == nil || (node.Type() != mt.CHUNK && node.Type() != mt.BIG) {
+		slog.Error("File was cached correctly but did not find chunk/big node")
 		return nil
 	}
-	// dscvType.msg.NodeType == mt.BIG
-	if err := tree.DiscoverAsBig(nodeHash, dscvType.msg.Children); err != nil {
-		return nil
+	if node.Type() == mt.CHUNK {
+		return node.Data()
 	}
-	var fileData bytes.Buffer
-	for _, ch := range dscvType.msg.Children.Records {
-		chData := downloadSubtreeHelper(conn, message, tree, mt.ConvertHashBytesToString(ch.Hash))
+	// mt.BIG
+	var data bytes.Buffer
+	for _, ch := range node.Children() {
+		chData := downloadSubtree(tree, ch.Hash())
 		if chData == nil {
 			return nil
 		}
-		fileData.Write(chData)
+		data.Write(chData)
 	}
-	return fileData.Bytes()
+	return data.Bytes()
 }
 
-func downloadSubtree(conn packet_manager.PacketConn, message mm.BasicFileInfo,
-	tree mt.RemoteMerkleTree, nodeHash string, dataCh chan []byte) {
-	dataCh <- downloadSubtreeHelper(conn, message, tree, nodeHash)
+func downloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	tree mt.RemoteMerkleTree, nodeHash string) []byte {
+	if err := cacheFile(conn, message, tree, nodeHash); err != nil {
+		return nil
+	}
+	slog.Debug("file has been cached successfuly, gathering data...", "hash", nodeHash)
+	return downloadSubtree(tree, nodeHash)
 }
 
 func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
@@ -438,7 +517,7 @@ func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 		return mm.TuiError("The node is not a File")
 	}
 	slog.Info("Downloading file started")
-	data := downloadSubtreeHelper(conn, message, tree, nodeHash)
+	data := downloadFile(conn, message, tree, nodeHash)
 	if data == nil {
 		return mm.TuiError("Failed to download file data")
 	}

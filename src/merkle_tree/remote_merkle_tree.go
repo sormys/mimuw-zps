@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"log/slog"
+	"sync"
 )
 
 // This tree is most likely not complete, and is constructed by adding nodes
@@ -16,6 +17,7 @@ import (
 type RemoteMerkleTree struct {
 	nodeMap  map[string]*RemoteNode
 	rootNode *RemoteNode
+	mutex    *sync.RWMutex
 }
 
 type RemoteNode struct {
@@ -115,6 +117,7 @@ func NewRemoteMerkleTree(hash string) RemoteMerkleTree {
 	return RemoteMerkleTree{
 		rootNode: rootNode,
 		nodeMap:  map[string]*RemoteNode{hash: rootNode},
+		mutex:    &sync.RWMutex{},
 	}
 }
 
@@ -123,6 +126,8 @@ func (rmt *RemoteMerkleTree) Root() *RemoteNode {
 }
 
 func (rmt *RemoteMerkleTree) GetNode(hash string) *RemoteNode {
+	rmt.mutex.RLock()
+	defer rmt.mutex.RUnlock()
 	return rmt.nodeMap[hash]
 }
 
@@ -130,9 +135,8 @@ func (rmt *RemoteMerkleTree) GetNode(hash string) *RemoteNode {
 // if provided data is correct in merkle tree. If error occurs,
 // merkle tree is not modified.
 func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error {
-
-	node, exist := rmt.nodeMap[nodeHash]
-	if !exist {
+	node := rmt.GetNode(nodeHash)
+	if node == nil {
 		return errors.New("no node with given hash found")
 	}
 	if node.Type() != NO_TYPE {
@@ -152,9 +156,7 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 		}
 	}
 	node.nodeType = CHUNK
-	node.data = data // Set the type of node with nodeHash as directory and validate
-	// if provided data is correct in merkle tree. If error occurs,
-	// merkle tree is not modified.
+	node.data = data
 	return nil
 }
 
@@ -164,8 +166,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	nodeHash string,
 	children DirectoryRecords) error {
-	node, exist := rmt.nodeMap[nodeHash]
-	if !exist {
+	node := rmt.GetNode(nodeHash)
+	if node == nil {
 		return errors.New("no node with given hash found")
 	}
 	if node.Type() != NO_TYPE {
@@ -187,6 +189,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 		}
 	}
 	newChildren := make([]*RemoteNode, len(children.Records))
+	rmt.mutex.Lock()
+	defer rmt.mutex.Unlock()
 	for i, ch := range children.Records {
 		hashStr := ConvertHashBytesToString(ch.Hash)
 		newChildren[i] = &RemoteNode{name: ch.Name, parent: node,
@@ -204,8 +208,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 func (rmt *RemoteMerkleTree) DiscoverAsBig(
 	nodeHash string,
 	children DirectoryRecords) error {
-	node, exist := rmt.nodeMap[nodeHash]
-	if !exist {
+	node := rmt.GetNode(nodeHash)
+	if node == nil {
 		return errors.New("no node with given hash found")
 	}
 	if node.Type() != NO_TYPE {
@@ -221,6 +225,8 @@ func (rmt *RemoteMerkleTree) DiscoverAsBig(
 		return errors.New("invalid children (hashes do not match)")
 	}
 	newChildren := make([]*RemoteNode, len(children.Records))
+	rmt.mutex.Lock()
+	defer rmt.mutex.Unlock()
 	for i, ch := range children.Records {
 		strHash := ConvertHashBytesToString(ch.Hash)
 		newChildren[i] = &RemoteNode{hash: strHash,
