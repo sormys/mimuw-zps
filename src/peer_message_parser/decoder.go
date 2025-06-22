@@ -208,7 +208,6 @@ func decodeRootReplyMsg(msg networking.ReceivedMessageData) (RootReplyMsg, error
 	if err != nil {
 		return RootReplyMsg{}, err
 	}
-	slog.Debug("Root hash bytes", "hash", []byte(msg.Data[:handler.HASH_LENGTH]))
 	return RootReplyMsg{
 		SignedMessage: newSignedMessage(msg, signature),
 		Hash:          handler.Hash(msg.Data[:handler.HASH_LENGTH]),

@@ -169,19 +169,22 @@ func askForData(addr net.Addr,
 	if data.Err != nil {
 		return mm.TuiError("Failed to get response from peer" + data.Err.Error())
 	}
-	dscvType := decodeDatumResponse(hash, data)
-	if dscvType.msg.NodeType == mt.DIRECTORY {
-		if err := tree.DiscoverAsDirectory(hash, dscvType.msg.Children); err != nil {
+	msg, err := decodeDatumResponse(hash, data)
+	if err != nil {
+		slog.Error("Failed to decode datum response", "err", err)
+	}
+	if msg.NodeType == mt.DIRECTORY {
+		if err := tree.DiscoverAsDirectory(hash, msg.Children); err != nil {
 			return mm.TuiError(err.Error())
 		}
 	}
-	if dscvType.msg.NodeType == mt.CHUNK {
-		if err := tree.DiscoverAsChunk(hash, dscvType.msg.Data); err != nil {
+	if msg.NodeType == mt.CHUNK {
+		if err := tree.DiscoverAsChunk(hash, msg.Data); err != nil {
 			return mm.TuiError(err.Error())
 		}
 	}
-	if dscvType.msg.NodeType == mt.BIG {
-		if err := tree.DiscoverAsBig(hash, dscvType.msg.Children); err != nil {
+	if msg.NodeType == mt.BIG {
+		if err := tree.DiscoverAsBig(hash, msg.Children); err != nil {
 			return mm.TuiError(err.Error())
 		}
 	}
@@ -230,32 +233,24 @@ func ReloadAvailablePeers(server srv_conn.Server) mm.TuiMessage {
 	return mm.CreateListPeers(peers)
 }
 
-type discoveredType struct {
-	startHash string
-	hash      string
-	cacheType mt.NodeType
-	msg       pmp.DatumMsg
-	err       error
-}
-
-func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData) discoveredType {
+func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData) (pmp.DatumMsg, error) {
 	responseMessage, err := pmp.DecodeMessage(response)
 	if err != nil {
-		return discoveredType{hash: reqHash, err: err}
+		return pmp.DatumMsg{}, err
 	}
 	switch msg := responseMessage.(type) {
 	case pmp.NoDatumMsg:
-		return discoveredType{hash: reqHash, err: errors.New("no data for given hash")}
+		return pmp.DatumMsg{}, errors.New("no data for given hash")
 	case pmp.DatumMsg:
 		if mt.ConvertHashBytesToString(msg.Hash[:]) != reqHash {
 			slog.Error("not matching hashes:", "got", msg.Hash, "expected", reqHash)
-			return discoveredType{hash: reqHash, err: errors.New("received hash do not match")}
+			return pmp.DatumMsg{}, errors.New("received hash do not match")
 		}
-		return discoveredType{hash: reqHash, msg: msg, err: nil}
+		return msg, nil
 	case pmp.ErrorMsg:
-		return discoveredType{hash: reqHash, err: errors.New("received error response from peer: " + msg.Message)}
+		return pmp.DatumMsg{}, errors.New("received error response from peer: " + msg.Message)
 	}
-	return discoveredType{hash: reqHash, err: errors.New("received unexpected reply from host")}
+	return pmp.DatumMsg{}, errors.New("received unexpected reply from host")
 }
 
 func sendDatumRequestConcurrently(conn packet_manager.PacketConn, addresses []net.Addr, hash []byte) networking.ReceivedMessageData {
@@ -280,59 +275,74 @@ func sendDatumRequestConcurrently(conn packet_manager.PacketConn, addresses []ne
 	}
 	return networking.ReceivedMessageData{Err: errors.New("none of peers responded successfully")}
 }
-func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, nodeHash string,
-	tree mt.RemoteMerkleTree, dscvChan chan<- discoveredType) {
-	startHash := nodeHash
-	hashBytes, err := mt.ConvertStringHashToBytes(nodeHash)
-	if err != nil {
-		dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid hash")}
-		return
-	}
+
+func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, node *mt.RemoteNode,
+	tree mt.RemoteMerkleTree) (mt.NodeType, error) {
+	var dscvType mt.NodeType
+	nodePath := []*mt.RemoteNode{}
 	for {
 		// Check if we have it already in the tree - cache
-		if node := tree.GetNode(nodeHash); node != nil && node.Type() != mt.NO_TYPE {
-			if node.IsDir() {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.DIRECTORY}
-				return
-			} else if node.IsFile() {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.CHUNK}
-				return
+		if node.Type() != mt.NO_TYPE {
+			if node.IsDir {
+				return mt.DIRECTORY, nil
+			} else if node.IsFile {
+				return mt.CHUNK, nil
 			}
 			if len(node.Children()) == 0 {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: errors.New("invalid data in tree")}
-				return
+				return mt.NO_TYPE, errors.New("invalid data in tree")
 			}
-			nodeHash = node.Children()[0].Hash()
-			hashBytes, err = mt.ConvertStringHashToBytes(nodeHash)
-			if err != nil {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: errors.New("invalid hash in tree")}
-				return
-			}
+			nodePath = append(nodePath, node)
+			node = node.Children()[0]
 			continue
 		}
-
-		data := sendDatumRequestConcurrently(conn, peer.Addresses, hashBytes)
+		nodeHashBytes, err := mt.ConvertStringHashToBytes(node.Hash())
+		if err != nil {
+			return mt.NO_TYPE, err
+		}
+		data := sendDatumRequestConcurrently(conn, peer.Addresses, nodeHashBytes)
 
 		if data.Err != nil {
-			dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: data.Err}
-			return
+			return mt.NO_TYPE, data.Err
 		}
-		dscvType := decodeDatumResponse(nodeHash, data)
-		dscvType.startHash = startHash
-		if dscvType.err != nil || dscvType.msg.NodeType != mt.BIG {
-			// The type has been discovered or error occured
-			dscvChan <- dscvType
-			return
-		}
-		// If there would be no children this would fail
-		err = tree.DiscoverAsBig(nodeHash, dscvType.msg.Children)
+		msg, err := decodeDatumResponse(node.Hash(), data)
 		if err != nil {
-			dscvChan <- dscvType
-			return
+			return mt.NO_TYPE, err
+		} else if msg.NodeType == mt.DIRECTORY {
+			// The type has been discovered
+			if err := tree.DiscoverAsDirectory(node.Hash(), msg.Children); err != nil {
+				return mt.NO_TYPE, err
+			}
+			dscvType = mt.DIRECTORY
+			break
+		} else if msg.NodeType == mt.CHUNK {
+			// The type has been discovered
+			if err := tree.DiscoverAsChunk(node.Hash(), msg.Data); err != nil {
+				return mt.NO_TYPE, err
+			}
+			dscvType = mt.CHUNK
+			break
 		}
-		hashBytes = dscvType.msg.Children.Records[0].Hash
-		nodeHash = mt.ConvertHashBytesToString(hashBytes)
+		// BIG node
+		// If there would be no children this would fail
+		err = tree.DiscoverAsBig(node.Hash(), msg.Children)
+		if err != nil {
+			return mt.NO_TYPE, err
+		}
+		nodePath = append(nodePath, node)
+		node = node.Children()[0]
 	}
+	// Udpate isDir/isFile info
+	if dscvType != mt.DIRECTORY && dscvType != mt.CHUNK {
+		return mt.NO_TYPE, errors.New("discovered wrong node type")
+	}
+	for _, pathNode := range nodePath {
+		if dscvType == mt.DIRECTORY {
+			pathNode.IsDir = true
+		} else {
+			pathNode.IsFile = true
+		}
+	}
+	return dscvType, nil
 }
 
 func getFoldersAndFiles(node *mt.RemoteNode,
@@ -344,22 +354,13 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 	subfolders := []mm.TUIFolder{}
 	files := []handler.File{}
 	for _, child := range node.Children() {
-		childHash := child.Hash()
-		ch := make(chan discoveredType, 1)
-		discoverNodeType(conn, peer, childHash, tree, ch)
-		childType := <-ch
-		if childType.err != nil {
-			slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", childHash, "err", childType.err)
-			return subfolders, files, childType.err
+		dscvType, err := discoverNodeType(conn, peer, child, tree)
+		if err != nil {
+			slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", child.Hash(), "err", err)
+			return subfolders, files, err
 		}
-		if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
-			continue
-		}
-		if childType.msg.NodeType == mt.DIRECTORY {
-			if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
-				return subfolders, files, err
-			}
-			nodeHashBytes, err := mt.ConvertStringHashToBytes(childType.startHash)
+		if dscvType == mt.DIRECTORY {
+			nodeHashBytes, err := mt.ConvertStringHashToBytes(child.Hash())
 			if err != nil {
 				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
 			}
@@ -376,11 +377,8 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 				subfolders = append(subfolders, folder)
 			}
 		}
-		if childType.msg.NodeType == mt.CHUNK {
-			if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
-				return subfolders, files, err
-			}
-			nodeHashBytes, err := mt.ConvertStringHashToBytes(childType.startHash)
+		if dscvType == mt.CHUNK {
+			nodeHashBytes, err := mt.ConvertStringHashToBytes(child.Hash())
 			if err != nil {
 				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
 			}
@@ -394,6 +392,7 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 			}
 		}
 	}
+
 	return subfolders, files, nil
 }
 
@@ -411,7 +410,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	if node == nil {
 		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
 	}
-	if !node.IsDir() {
+	if !node.IsDir {
 		return mm.TuiError("The node is not a directory")
 	}
 	subfolders, files, err := getFoldersAndFiles(node, message.Peer, message.Path, tree, conn)
@@ -448,8 +447,9 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 		case hash := <-reqCh:
 			// Already in Cache
 			if node := tree.GetNode(hash); node != nil && node.Type() != mt.NO_TYPE {
-				if node.IsDir() {
+				if node.IsDir {
 					resCh <- -1
+					slog.Warn("In file subtree there is a directory")
 					continue
 				}
 				if node.Type() == mt.CHUNK {
@@ -458,6 +458,7 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 				}
 				if node.Type() != mt.BIG {
 					resCh <- -1
+					slog.Warn("Unexpected type of node in file subtree", "type", node.Type())
 					continue
 				}
 				for _, ch := range node.Children() {
@@ -488,14 +489,14 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 				resCh <- -1
 				continue
 			}
-			dscvType := decodeDatumResponse(hash, data)
-			if dscvType.err != nil {
-				slog.Warn("Error while decoding datum response", "err", dscvType.err)
+			msg, err := decodeDatumResponse(hash, data)
+			if err != nil {
+				slog.Warn("Error while decoding datum response", "err", err)
 				resCh <- -1
 				continue
 			}
-			if dscvType.msg.NodeType == mt.CHUNK {
-				if err := tree.DiscoverAsChunk(hash, dscvType.msg.Data); err != nil {
+			if msg.NodeType == mt.CHUNK {
+				if err := tree.DiscoverAsChunk(hash, msg.Data); err != nil {
 					slog.Warn("Error while discovering as chunk", "err", err)
 					resCh <- -1
 					continue
@@ -503,21 +504,22 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 				resCh <- 0
 				continue
 			}
-			if dscvType.msg.NodeType == mt.DIRECTORY {
+			if msg.NodeType == mt.DIRECTORY {
 				resCh <- -1
 				slog.Warn("Invalid type(directory)", "hash", hash)
 				continue
 			}
-			if err := tree.DiscoverAsBig(hash, dscvType.msg.Children); err != nil {
+			if err := tree.DiscoverAsBig(hash, msg.Children); err != nil {
 				resCh <- -1
+				slog.Warn("Failed to discover node as big")
 				continue
 			}
-			for _, ch := range dscvType.msg.Children.Records {
+			for _, ch := range msg.Children.Records {
 				if ok := tryDeferWork(mt.ConvertHashBytesToString(ch.Hash)); !ok {
 					break
 				}
 			}
-			resCh <- len(dscvType.msg.Children.Records)
+			resCh <- len(msg.Children.Records)
 			continue
 		}
 	}
@@ -598,7 +600,7 @@ func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	if node == nil {
 		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
 	}
-	if !node.IsFile() {
+	if !node.IsFile {
 		return mm.TuiError("The node is not a File")
 	}
 	slog.Info("Downloading file started")

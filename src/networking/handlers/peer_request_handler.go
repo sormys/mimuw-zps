@@ -32,9 +32,13 @@ func RunPeerRequestHandler(conn packet_manager.PacketConn, tuiSender chan<- mess
 					err = handleDatumRequest(conn, data.Addr, msg)
 				}
 			case pmp.PingMsg:
-				err = handlePing(conn, data.Addr, msg)
+				if ContainsUser(data.Addr) {
+					err = handlePing(conn, data.Addr, msg)
+				}
 			case pmp.NATTraversal2:
-				handleNATTraversal2(conn, msg)
+				if ContainsUser(data.Addr) {
+					handleNATTraversal2(conn, msg)
+				}
 			default:
 				slog.Warn("Currently no handler for request of type", "type", msg.Type())
 			}

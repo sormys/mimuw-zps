@@ -21,29 +21,20 @@ type RemoteMerkleTree struct {
 }
 
 type RemoteNode struct {
-	nodeType          NodeType
-	name              string
-	hash              string
-	parent            *RemoteNode
-	children          []*RemoteNode
-	data              []byte
-	hasChunkChild     bool
-	hasDirectoryChild bool
+	nodeType NodeType
+	name     string
+	hash     string
+	children []*RemoteNode
+	data     []byte
+	// Represents type represented in file system - Big node can represent part of dir of file
+	IsDir  bool
+	IsFile bool
 }
 
 // ========================== remoteNode ==========================
 
 func (r RemoteNode) Type() NodeType {
 	return r.nodeType
-}
-
-// Represents type represented in file system - Big node can represent part of dir of file
-func (r RemoteNode) IsDir() bool {
-	return r.Type() == DIRECTORY || r.hasDirectoryChild
-}
-
-func (r RemoteNode) IsFile() bool {
-	return r.Type() == CHUNK || r.hasChunkChild
 }
 
 func (r RemoteNode) Name() string {
@@ -58,51 +49,12 @@ func (r RemoteNode) Hash() string {
 	return r.hash
 }
 
-func (r RemoteNode) Parent() *RemoteNode {
-	return r.parent
-}
-
 func (rd RemoteNode) Children() []*RemoteNode {
 	return rd.children
 }
 
 func (rc RemoteNode) Data() []byte {
 	return rc.data
-}
-
-func (rd *RemoteNode) registerChildrenType(nodeType NodeType) error {
-	if rd.Type() != BIG {
-		return nil
-	}
-	switch nodeType {
-	case NO_TYPE, BIG:
-		// Nothing to do
-	case CHUNK:
-		if rd.hasDirectoryChild {
-			return errors.New("big node has multiple types of values")
-		}
-		if !rd.hasChunkChild && rd.parent != nil {
-			// State has changed
-			if err := rd.parent.registerChildrenType(CHUNK); err != nil {
-				return err
-			}
-		}
-		rd.hasChunkChild = true
-	case DIRECTORY:
-		if rd.hasChunkChild {
-			return errors.New("big node has multiple types of values")
-		}
-		if !rd.hasDirectoryChild && rd.parent != nil {
-			// State has changed
-			if err := rd.parent.registerChildrenType(DIRECTORY); err != nil {
-				return err
-			}
-		}
-		rd.hasDirectoryChild = true
-	default:
-		return errors.New("unknown node type")
-	}
-	return nil
 }
 
 // ======================= remoteMerkleTree =======================
@@ -112,6 +64,8 @@ func NewRemoteMerkleTree(hash string) RemoteMerkleTree {
 		name:     "",
 		hash:     hash,
 		nodeType: NO_TYPE,
+		IsFile:   false,
+		IsDir:    false,
 		children: []*RemoteNode{},
 	}
 	return RemoteMerkleTree{
@@ -139,6 +93,9 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 	if node == nil {
 		return errors.New("no node with given hash found")
 	}
+	if node.IsDir {
+		return errors.New("invalid node type, cannot be dir and file at the same time")
+	}
 	if node.Type() != NO_TYPE {
 		return errors.New("cannot change type of initialized node")
 	}
@@ -150,11 +107,7 @@ func (rmt *RemoteMerkleTree) DiscoverAsChunk(nodeHash string, data []byte) error
 	if expectedHash != node.hash {
 		return errors.New("invalid data (hashes do not match)")
 	}
-	if node.parent != nil {
-		if err := node.parent.registerChildrenType(CHUNK); err != nil {
-			return err
-		}
-	}
+	node.IsFile = true
 	node.nodeType = CHUNK
 	node.data = data
 	return nil
@@ -170,6 +123,9 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 	if node == nil {
 		return errors.New("no node with given hash found")
 	}
+	if node.IsFile {
+		return errors.New("invalid node type, cannot be dir and file at the same time")
+	}
 	if node.Type() != NO_TYPE {
 		return errors.New("cannot change type of initialized node")
 	}
@@ -183,19 +139,19 @@ func (rmt *RemoteMerkleTree) DiscoverAsDirectory(
 		slog.Error("failed to verify hashes:", "requested", nodeHash, "children", children, "got", hashStr)
 		return errors.New("invalid children (hashes do not match)")
 	}
-	if node.parent != nil {
-		if err := node.parent.registerChildrenType(DIRECTORY); err != nil {
-			return err
-		}
-	}
+	node.IsDir = true
 	newChildren := make([]*RemoteNode, len(children.Records))
-	rmt.mutex.Lock()
-	defer rmt.mutex.Unlock()
 	for i, ch := range children.Records {
 		hashStr := ConvertHashBytesToString(ch.Hash)
-		newChildren[i] = &RemoteNode{name: ch.Name, parent: node,
-			hash: ConvertHashBytesToString(ch.Hash), nodeType: NO_TYPE}
-		rmt.nodeMap[hashStr] = newChildren[i]
+		childNode := rmt.GetNode(hashStr)
+		if childNode == nil {
+			rmt.mutex.Lock()
+			childNode = &RemoteNode{name: ch.Name, IsDir: false, IsFile: false,
+				hash: hashStr, nodeType: NO_TYPE}
+			rmt.nodeMap[hashStr] = childNode
+			rmt.mutex.Unlock()
+		}
+		newChildren[i] = childNode
 	}
 	node.children = newChildren
 	node.nodeType = DIRECTORY
@@ -225,13 +181,17 @@ func (rmt *RemoteMerkleTree) DiscoverAsBig(
 		return errors.New("invalid children (hashes do not match)")
 	}
 	newChildren := make([]*RemoteNode, len(children.Records))
-	rmt.mutex.Lock()
-	defer rmt.mutex.Unlock()
 	for i, ch := range children.Records {
 		strHash := ConvertHashBytesToString(ch.Hash)
-		newChildren[i] = &RemoteNode{hash: strHash,
-			parent: node, nodeType: NO_TYPE}
-		rmt.nodeMap[strHash] = newChildren[i]
+		childNode := rmt.GetNode(strHash)
+		if childNode == nil {
+			rmt.mutex.Lock()
+			childNode = &RemoteNode{hash: strHash,
+				nodeType: NO_TYPE, IsDir: node.IsDir, IsFile: node.IsFile}
+			rmt.nodeMap[strHash] = childNode
+			rmt.mutex.Unlock()
+		}
+		newChildren[i] = childNode
 	}
 	node.children = newChildren
 	node.nodeType = BIG
