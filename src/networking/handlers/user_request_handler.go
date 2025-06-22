@@ -359,16 +359,18 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 			if err != nil {
 				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
 			}
-			folder := mm.TUIFolder{
-				Hash:       handler.Hash(nodeHashBytes),
-				Name:       child.Name(),
-				Path:       path + "/" + child.Name(),
-				Files:      nil,
-				Subfolders: nil,
-				Loaded:     false,
-				Expanded:   false,
+			if node.Type() == mt.DIRECTORY || len(subfolders) == 0 {
+				folder := mm.TUIFolder{
+					Hash:       handler.Hash(nodeHashBytes),
+					Name:       child.Name(),
+					Path:       path + "/" + child.Name(),
+					Files:      nil,
+					Subfolders: nil,
+					Loaded:     false,
+					Expanded:   false,
+				}
+				subfolders = append(subfolders, folder)
 			}
-			subfolders = append(subfolders, folder)
 		}
 		if childType.msg.NodeType == mt.CHUNK {
 			if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
@@ -378,12 +380,14 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 			if err != nil {
 				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
 			}
-			file := handler.File{
-				Hash: handler.Hash(nodeHashBytes),
-				Name: child.Name(),
-				Path: path + "/" + child.Name(),
+			if node.Type() == mt.DIRECTORY || len(subfolders) == 0 {
+				file := handler.File{
+					Hash: handler.Hash(nodeHashBytes),
+					Name: child.Name(),
+					Path: path + "/" + child.Name(),
+				}
+				files = append(files, file)
 			}
-			files = append(files, file)
 		}
 	}
 	return subfolders, files, nil

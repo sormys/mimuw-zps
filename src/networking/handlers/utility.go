@@ -79,7 +79,7 @@ func tryPingPeer(conn packet_manager.PacketConn, peer networking.Peer) {
 			status.lastPing = time.Now()
 			connectedPeers[peer.Name] = status
 			slog.Debug("Connection refreshed!", "peer", peer.Name)
-			return
+			continue
 		default:
 			slog.Warn("Received unexpected reply to ping", "nickname", peer.Name, "message type", msg.Type())
 		}
