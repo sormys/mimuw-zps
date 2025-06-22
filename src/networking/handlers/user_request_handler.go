@@ -16,10 +16,27 @@ import (
 	"mimuw_zps/src/utility"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 )
 
 const DOWNLOAD_THREADS = 10
+const DOWNLOAD = "Download"
+
+func getDownloadPath(path string) (string, error) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("failed to resolve project root path")
+	}
+	projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filename))))
+	downloadDir := filepath.Join(projectRoot, DOWNLOAD)
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return "", err
+	}
+	finalPath := filepath.Join(downloadDir, path)
+	return finalPath, nil
+}
 
 // Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
 func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.RootReplyMsg, error) {
@@ -523,13 +540,18 @@ func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	}
 
 	// Save data to tmp.tmp file
-	err := os.WriteFile("tmp.tmp", data, 0644)
+	slog.Debug("Downloaded file data", "data", message.Name)
+	path, err := getDownloadPath(message.Name)
+	if err != nil {
+		return mm.TuiInfo("Failed to create Folder to downloading" + message.Name)
+	}
+	err = os.WriteFile(path, data, 0644)
 	if err != nil {
 		return mm.TuiError("Failed to save file: " + err.Error())
 	}
 
-	slog.Debug("File saved successfully", "filename", "tmp.tmp", "size", len(data))
-	return mm.TuiInfo("File downloaded and saved as tmp.tmp")
+	slog.Debug("File saved successfully", "filename", message.Name, "size", len(data))
+	return mm.TuiInfo("File downloaded and saved in" + path)
 }
 
 func RunUserRequestHandler(conn packet_manager.PacketConn,
