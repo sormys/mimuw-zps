@@ -539,8 +539,8 @@ func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
 
 func cacheFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	tree mt.RemoteMerkleTree, nodeHash string) error {
-	reqCh := make(chan string, 100000) // Allow for very big files
-	resCh := make(chan int, 1000)      // result is how many new nodes have to be queried, -1 means that error has occured
+	reqCh := make(chan string, 1000) // Allow for very big files
+	resCh := make(chan int, 1000)    // result is how many new nodes have to be queried, -1 means that error has occured
 	stopCh := make(chan bool)
 	for range DOWNLOAD_THREADS {
 		go cacheNodeWorker(conn, tree, message.Peer, reqCh, resCh, stopCh)
@@ -650,25 +650,21 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 			switch message.RequestType() {
 			case mm.CONNECT:
 				data = StartConnection(conn, message.Payload().([]networking.Peer)[0], nickname)
+			case mm.RELOAD_CONTENT:
+				mutex.Lock()
+				for k := range peersTrees {
+					delete(peersTrees, k)
+				}
+				mutex.Unlock()
+				data = ReloadAvailablePeers(server)
 			case mm.EXPAND_FOLDER:
 				data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
 			case mm.DOWNLOAD:
 				data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
-
-			case mm.RELOAD_CONTENT:
-				{
-					mutex.Lock()
-					for k := range peersTrees {
-						delete(peersTrees, k)
-					}
-					mutex.Unlock()
-					data = ReloadAvailablePeers(server)
-				}
 			case mm.SHOW_DATA:
-				{
-					user := message.Payload().([]networking.Peer)[0]
-					data = ReloadPeerContent(conn, user, peersTrees, &mutex)
-				}
+				user := message.Payload().([]networking.Peer)[0]
+				// Expected output is TuiMessage -> see expand Folder
+				data = ReloadPeerContent(conn, user, peersTrees, &mutex)
 			}
 			if data != nil && !mm.IsEmpty(data) {
 				tuiSender <- data
