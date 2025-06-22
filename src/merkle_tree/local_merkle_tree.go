@@ -2,12 +2,14 @@ package merkle_tree
 
 import (
 	"io"
+	"log/slog"
 	"mimuw_zps/src/handler"
 	"os"
 )
 
 const MAX_CHUNK = 1024
 const MAX_CHILDREN_SIZE = 32
+const DIR_HALF_ENTRY = 32
 
 type Datum struct {
 	Hash     handler.Hash
@@ -18,6 +20,15 @@ type Datum struct {
 
 var hashMap = make(map[string]Datum)
 var rootHash handler.Hash
+
+func getNameBytes(name string) []byte {
+	if len(name) >= DIR_HALF_ENTRY {
+		return []byte(name[:DIR_HALF_ENTRY])
+	}
+	nameBytes := make([]byte, DIR_HALF_ENTRY)
+	copy(nameBytes[:len(name)], []byte(name))
+	return nameBytes
+}
 
 func chunkFile(path string) ([]handler.Hash, error) {
 	file, err := os.Open(path)
@@ -100,15 +111,17 @@ func buildDirectory(path string) (handler.Hash, error) {
 		newPath := path + "/" + item.Name()
 		var childHash handler.Hash
 		if item.IsDir() {
+			slog.Warn("Building directory ", "path", newPath)
 			childHash, err = buildDirectory(newPath)
 		} else {
+			slog.Warn("Building File ", "path", newPath)
 			childHash, err = buildFileNode(newPath)
 		}
 		if err != nil {
 			return handler.Hash{}, err
 		}
 
-		hashes = append(hashes, []byte(item.Name())...)
+		hashes = append(hashes, getNameBytes(item.Name())...)
 		hashes = append(hashes, childHash[:]...)
 		children = append(children, ConvertHashBytesToString(childHash[:]))
 	}
