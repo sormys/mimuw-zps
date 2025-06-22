@@ -325,7 +325,7 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	if node == nil {
 		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
 	}
-	if node.Type() != mt.DIRECTORY {
+	if !node.IsDir() {
 		return mm.TuiError("The node is not a directory")
 	}
 	subfolders, files, err := getFoldersAndFiles(node, message.Peer, message.Path, tree, conn)
