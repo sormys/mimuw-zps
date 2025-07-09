@@ -1,21 +1,49 @@
-# Wymagania
-- go 1.24
+# Distributed Read-Only Filesystem over P2P
 
-# Kompilacja
-- z poziomu pliku go.mod należy wykonać podaną operacje: ```go build -o main src/main/main.go```
+This project implements a lightweight, distributed, read-only filesystem using a custom peer-to-peer protocol with cryptographic guarantees. Peers expose their local filesystem trees to other peers while ensuring data integrity using Merkle trees and signed messages.
 
-# Dodatkowe informacje
-- pliki, które chcemy udostępnić powinny znajdować się w folderze `root/` znajdującym
-    się na tym samym poziomie co plik wykonywalny. Załączony został przykładowy plik.
-- pliki, które pobierzemy zostaną zapisane w foldrze `Download/` znajdującym
-    się na tym samym poziomie co plik wykonywalny, będą one podzielone względem nazwy
-    zucha od którego pobraliśmy dany plik
+Key characteristics:
 
-# Uruchamianie
-- powstały plik programu ma kilka dostępnych opcji:
-    - `nickname` - nick pod jakim chcemy się połączyć
-    - `log-to-file` - flaga binarna. Gdy użyta, wszystkie logi zostaną zapisane do pliku `app.log`
-    - `log-level` - najniższy poziom logów, który ma zostać uwzględniony
-- polecamy użyć opcji `log-to-file`, lub przy uruchamianiu przekierować stderr, tak,
-    aby logi nie zakłucały korzystania z interfejsu w terminalu
-- przykładowe uruchomienie ```./main --log-level="INFO" --nickname="MłodyG" 2>/dev/pts/2```
+- Peer discovery and key distribution handled via a central REST server
+- Data transfer over UDP between peers
+- End-to-end data authenticity via SHA-256 and ECDSA signatures
+- Basic NAT traversal mechanism
+- Filesystem represented as a Merkle tree with support for chunking and directories
+
+The project was developed as part of an advanced networking course. The focus was on protocol design, security, and efficient data transfer in a decentralized environment.
+
+---
+
+## Requirements
+- Go 1.24
+
+## Build
+From the directory containing `go.mod`, run:
+```
+go build -o main src/main/main.go
+```
+
+## Additional Info
+- Files to be shared should be placed in the `root/` directory, located at the same level as the executable. A sample file is included.
+- Downloaded files will be saved in the `Download/` directory, also at the same level as the executable. Files will be grouped by the nickname of the peer they were fetched from.
+
+## Running the Program
+The resulting binary accepts the following options:
+
+- `--nickname` – the nickname used to register
+- `--log-to-file` – binary flag; when set, logs will be written to `app.log`
+- `--log-level` – sets the minimum log level to be displayed
+
+It is recommended to use `--log-to-file` or redirect `stderr` to avoid cluttering the terminal UI.
+
+Example:
+```
+./main --log-level="INFO" --nickname="YoungG" 2>/dev/pts/2
+```
+
+> INFO: server address is provided in `main.go` as we used it during
+development and project presentation. This is also the only instance of the server
+that we know of. 
+
+# Addtional info
+In `Raport.pdf` you can find project report written in polish.
