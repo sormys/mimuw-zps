@@ -144,6 +144,7 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 			}
 		}(addr)
 	}
+
 	for range addresses {
 		res := <-resultCh
 		if res.RequestType() == mm.CONNECT {
@@ -663,7 +664,6 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 				data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
 			case mm.SHOW_DATA:
 				user := message.Payload().([]networking.Peer)[0]
-				// Expected output is TuiMessage -> see expand Folder
 				data = ReloadPeerContent(conn, user, peersTrees, &mutex)
 			}
 			if data != nil && !mm.IsEmpty(data) {
