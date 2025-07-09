@@ -26,6 +26,9 @@ func basicValidation(msg networking.ReceivedMessageData) error {
 }
 
 func DecodeMessage(msg networking.ReceivedMessageData) (PeerMessage, error) {
+	if msg.Err != nil {
+		return nil, msg.Err
+	}
 	switch msg.MessType {
 	case networking.PING:
 		return decodePingMsg(msg)
@@ -184,8 +187,8 @@ func decodeRootRequestMsg(msg networking.ReceivedMessageData) (RootRequestMsg, e
 	if err := basicValidation(msg); err != nil {
 		return RootRequestMsg{}, err
 	}
-	if msg.Length > 0 {
-		return RootRequestMsg{}, decoderError("root request should have empty body")
+	if msg.Length != 32 {
+		return RootRequestMsg{}, decoderError("root request of invalid length")
 	}
 	return RootRequestMsg{
 		UnsignedMessage: newUnsignedMessage(msg),
@@ -205,7 +208,6 @@ func decodeRootReplyMsg(msg networking.ReceivedMessageData) (RootReplyMsg, error
 	if err != nil {
 		return RootReplyMsg{}, err
 	}
-	slog.Debug("Root hash bytes", "hash", []byte(msg.Data[:handler.HASH_LENGTH]))
 	return RootReplyMsg{
 		SignedMessage: newSignedMessage(msg, signature),
 		Hash:          handler.Hash(msg.Data[:handler.HASH_LENGTH]),
@@ -237,8 +239,11 @@ func getNameFromBytes(nameBytes [32]byte) (string, error) {
 			break
 		}
 	}
-	importantBytes := nameBytes[:min(i, 31)]
-	if i == 0 || !utf8.Valid(importantBytes) {
+	if i == 0 {
+		return "", nil
+	}
+	importantBytes := nameBytes[:min(i, 30)+1]
+	if !utf8.Valid(importantBytes) {
 		return "", errors.New("invalid name of file/directory")
 	}
 	return string(importantBytes), nil
@@ -405,3 +410,5 @@ func decodeNATTraversal2(msg networking.ReceivedMessageData) (NATTraversal2, err
 		Addr:          addr,
 	}, nil
 }
+
+// TODO(sormys) add NatTraversal messages

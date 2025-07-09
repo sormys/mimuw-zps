@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"hash"
 	"mimuw_zps/src/handler"
+	"path/filepath"
+	"runtime"
 )
 
 type NodeType string
@@ -14,6 +16,7 @@ const (
 	CHUNK     NodeType = "chunk"
 	DIRECTORY NodeType = "directory"
 	BIG       NodeType = "big"
+	ROOT      string   = "root"
 )
 
 func hashData(childrenHash [][]byte) string {
@@ -23,8 +26,7 @@ func hashData(childrenHash [][]byte) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-func hashDatum(data Datum) handler.Hash {
-	h := sha256.New()
+func hashDatum(data *Datum) handler.Hash {
 	var nodeTypeByte byte
 	switch data.NodeType {
 	case CHUNK:
@@ -34,11 +36,10 @@ func hashDatum(data Datum) handler.Hash {
 	case BIG:
 		nodeTypeByte = 2
 	}
-	h.Write([]byte{nodeTypeByte})
-	h.Write(data.Data)
-	var out handler.Hash
-	copy(out[:], h.Sum(nil))
-	return out
+	data.Data = append([]byte{nodeTypeByte}, data.Data...)
+	h := sha256.Sum256(data.Data)
+	data.Hash = h
+	return h
 }
 
 func ConvertHashToString(hash hash.Hash) string {
@@ -51,6 +52,13 @@ func ConvertHashBytesToString(hash []byte) string {
 
 func ConvertStringHashToBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
+}
+
+func GetMerkleeDirectory() (string, bool) {
+	_, filename, _, ok := runtime.Caller(0)
+	base := filepath.Dir(filepath.Dir(filepath.Dir(filename)))
+	merkle := filepath.Join(base, "root")
+	return merkle, ok
 }
 
 type DirectoryRecords struct {

@@ -24,13 +24,21 @@ func RunPeerRequestHandler(conn packet_manager.PacketConn, tuiSender chan<- mess
 			case pmp.HelloMsg:
 				err = handleHello(conn, data.Addr, msg, server, nickname)
 			case pmp.RootRequestMsg:
-				err = handleRootRequest(conn, data.Addr, msg)
+				if ContainsUser(data.Addr) {
+					err = handleRootRequest(conn, data.Addr, msg)
+				}
 			case pmp.DatumRequestMsg:
-				err = handleDatumRequest(conn, data.Addr, msg)
+				if ContainsUser(data.Addr) {
+					err = handleDatumRequest(conn, data.Addr, msg)
+				}
 			case pmp.PingMsg:
-				err = handlePing(conn, data.Addr, msg)
+				if ContainsUser(data.Addr) {
+					err = handlePing(conn, data.Addr, msg)
+				}
 			case pmp.NATTraversal2:
-				handleNATTraversal2(conn, msg)
+				if ContainsUser(data.Addr) {
+					handleNATTraversal2(conn, msg)
+				}
 			default:
 				slog.Warn("Currently no handler for request of type", "type", msg.Type())
 			}
@@ -54,15 +62,14 @@ func sendErrorReply(conn packet_manager.PacketConn, addr net.Addr, err error) {
 func handleHello(conn packet_manager.PacketConn, addr net.Addr, hello pmp.HelloMsg,
 	server srv_conn.Server, nickname string) error {
 
-	slog.Debug("Responding to HELLO message", "id", hello.ID, "addr", addr)
-	key, err := server.GetPeerKey(hello.Name)
+	peer, err := server.GetInfoPeer(hello.Name)
 
 	if err != nil {
 		slog.Error("Failed to get peer key", "error", err)
 		return err
 	}
 
-	if !hello.VerifySignature(encryption.ParsePublicKey(key)) {
+	if !hello.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
 		slog.Debug("Failed to verify signature")
 		return errors.New("failed to verify signature in hello reply")
 	}
@@ -74,6 +81,8 @@ func handleHello(conn packet_manager.PacketConn, addr net.Addr, hello pmp.HelloM
 		Name:          nickname,
 	}
 	conn.SendReply(addr, pmp.EncodeMessage(message))
+	outgoing := peer.Name == srv_conn.GALENE // Nasty trick to refresh connection with the server
+	ConnectPeer(outgoing, peer, hello.Extensions)
 	return nil
 }
 
@@ -116,7 +125,6 @@ func handlePing(conn packet_manager.PacketConn, addr net.Addr, ping pmp.PingMsg)
 }
 
 func handleNATTraversal2(conn packet_manager.PacketConn, nattrav2 pmp.NATTraversal2) {
-	slog.Error("Received nat traversal2 reques", "rq", nattrav2)
 	ping := pmp.PingMsg{
 		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 	}

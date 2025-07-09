@@ -65,6 +65,7 @@ type TuiMessagePeers struct {
 
 type BasicFileInfo struct {
 	Hash handler.Hash
+	Name string
 	Peer networking.Peer
 }
 
@@ -114,13 +115,6 @@ func ConvertErrorsToTuiMessage(err []error) TuiMessage {
 	return &TuiMessageInfo{
 		Notification: ERROR_TUI,
 		Description:  description,
-	}
-}
-
-func CreateTuiMessageTypeBasicInfo(hash handler.Hash, peer networking.Peer) TuiMessage {
-	return &TuiMessageBasicInfo{
-		Notification: INFO_TUI,
-		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
 	}
 }
 
@@ -179,10 +173,10 @@ func ExpandFolder(path string, peer networking.Peer, name string, hash handler.H
 		Info:         BasicFolder{Path: path, Peer: peer, Name: name, Hash: hash},
 	}
 }
-func DownloadFile(hash handler.Hash, peer networking.Peer) TuiMessage {
+func DownloadFile(hash handler.Hash, peer networking.Peer, name string) TuiMessage {
 	return &TuiMessageBasicInfo{
 		Notification: DOWNLOAD,
-		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer},
+		FileInfo:     BasicFileInfo{Hash: hash, Peer: peer, Name: name},
 	}
 }
 func ReloadContent() TuiMessage {

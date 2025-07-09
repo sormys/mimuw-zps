@@ -16,78 +16,139 @@ import (
 	"mimuw_zps/src/utility"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 )
+
+const DOWNLOAD_THREADS = 1
+const DOWNLOAD = "Download"
+
+func getDownloadPath(name string, path string) (string, error) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("failed to resolve project root path")
+	}
+	projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filename))))
+	downloadDir := filepath.Join(projectRoot, DOWNLOAD)
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return "", err
+	}
+	userDir := filepath.Join(downloadDir, name)
+	if err := os.MkdirAll(userDir, 0755); err != nil {
+		return "", err
+	}
+	finalPath := filepath.Join(userDir, path)
+	return finalPath, nil
+}
 
 // Sends a message of type RootRequest to all provided addresses. Stop automatically upon receiving a valid response
 func sendRootRequest(conn packet_manager.PacketConn, peer networking.Peer) (pmp.RootReplyMsg, error) {
 	addr := peer.Addresses
+	type result struct {
+		reply pmp.RootReplyMsg
+		err   error
+	}
+	resultCh := make(chan result, len(addr))
 	for _, address := range addr {
-		request := pmp.RootRequestMsg{
-			UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-		}
-		info := conn.SendRequest(address, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
-
-		decoded, err := pmp.DecodeMessage(info)
-		if err != nil {
-			return pmp.RootReplyMsg{}, err
-		}
-		switch msg := decoded.(type) {
-		case pmp.ErrorMsg:
-			return pmp.RootReplyMsg{}, errors.New(msg.Message)
-		case pmp.RootReplyMsg:
-			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
-				return pmp.RootReplyMsg{}, errors.New("incorrect verify signature")
+		go func(address net.Addr) {
+			request := pmp.RootRequestMsg{
+				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
 			}
-			return msg, nil
+			info := conn.SendRequest(address, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+
+			decoded, err := pmp.DecodeMessage(info)
+			if err != nil {
+				resultCh <- result{err: err}
+			}
+			switch msg := decoded.(type) {
+			case pmp.ErrorMsg:
+				resultCh <- result{err: errors.New(msg.Message)}
+			case pmp.RootReplyMsg:
+				if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+					resultCh <- result{err: errors.New("incorrect verify signature")}
+				}
+				resultCh <- result{reply: msg, err: nil}
+			}
+		}(address)
+	}
+	for range addr {
+		res := <-resultCh
+		if res.err == nil {
+			return res.reply, nil
 		}
 	}
 	return pmp.RootReplyMsg{}, errors.New("none of peers responds")
 }
 
-func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, nickname string) {
-	addr, _ := net.ResolveUDPAddr("udp", "51.210.14.2:8443") // temporrily hard coded galene ip
-	request := pmp.NATTraversal{
-		SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-		Addr:          peer.Addresses[0],
-	}
-	reply := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
-	decoded, _ := pmp.DecodeMessage(reply)
-	slog.Error("Got reply for natraversal", "reply", decoded)
-	switch msg := decoded.(type) {
-	case pmp.ErrorMsg:
-		slog.Error("Got ERROR for natraversal", "msessagae", msg.Message)
+func UDPHolePunch(conn packet_manager.PacketConn, peer networking.Peer, peerAddr net.Addr, nickname string, maxTries int) {
+	slog.Info("Trying to hole punch", "dst nickname", peer.Name)
+	NATTraversalExtension := pmp.Extensions{0x0, 0x0, 0x0, 0x1}
+	peers := GetPeersWithExtension(NATTraversalExtension)
+	slog.Debug("Found peers able to hole punch", "peer count", len(peers))
+	successful := 0
+	for _, through := range peers {
+		for range max(1, maxTries/2) {
+			for _, addr := range through.Addresses {
+				request := pmp.NATTraversal{
+					SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+					Addr:          peerAddr,
+				}
+				slog.Debug("Requesting hole puch", "to", peer.Name, "through", through.Name)
+				reply := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+				decoded, _ := pmp.DecodeMessage(reply)
+				switch msg := decoded.(type) {
+				case pmp.ErrorMsg:
+					slog.Error("Got error for natraversal", "msessagae", msg.Message)
+				case pmp.PongMsg:
+					successful++
+					if successful >= maxTries {
+						return
+					}
+				}
+			}
+		}
 	}
 }
 
 // Initiates communication with the peer whose addresses are provided
 func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickname string) mm.TuiMessage {
 	addresses := peer.Addresses
-	slog.Debug("Starting connection with peer", "nickname", peer.Name)
+	resultCh := make(chan mm.TuiMessage, len(addresses))
 	for _, addr := range addresses {
-		request := pmp.HelloMsg{
-			SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
-			Extensions:    pmp.Extensions(pmp.GetExtensions()),
-			Name:          nickname,
-		}
-		info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
-
-		if info.Err != nil {
-			UDPHolePunch(conn, peer, nickname)
-		}
-		info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
-		decoded, err := pmp.DecodeMessage(info)
-		if err != nil {
-			return mm.TuiError(err.Error())
-		}
-		switch msg := decoded.(type) {
-		case pmp.ErrorMsg:
-			return mm.TuiError("Error reply from peer: " + msg.Message)
-		case pmp.HelloReplyMsg:
-			if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
-				return mm.TuiError("Invalid hello reply signature")
+		go func(addr net.Addr) {
+			request := pmp.HelloMsg{
+				SignedMessage: pmp.NewEmptySignedMessage(utility.GenerateID()),
+				Extensions:    pmp.Extensions(pmp.GetExtensions()),
+				Name:          nickname,
 			}
-			return mm.InitConnectionMessage(peer)
+			info := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
+
+			if info.Err != nil {
+				UDPHolePunch(conn, peer, addr, nickname, 5)
+			}
+			info = conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewPolicyHandshake())
+			decoded, err := pmp.DecodeMessage(info)
+			if err != nil {
+				resultCh <- mm.TuiError(err.Error())
+			}
+			switch msg := decoded.(type) {
+			case pmp.ErrorMsg:
+				resultCh <- mm.TuiError("Error reply from peer: " + msg.Message)
+			case pmp.HelloReplyMsg:
+				if !msg.VerifySignature(encryption.ParsePublicKey(peer.Key)) {
+					resultCh <- mm.TuiError("Invalid hello reply signature")
+				}
+				ConnectPeer(true, peer, msg.Extensions)
+				resultCh <- mm.InitConnectionMessage(peer)
+			}
+		}(addr)
+	}
+
+	for range addresses {
+		res := <-resultCh
+		if res.RequestType() == mm.CONNECT {
+			return res
 		}
 	}
 
@@ -95,6 +156,57 @@ func StartConnection(conn packet_manager.PacketConn, peer networking.Peer, nickn
 }
 
 // reloads all files associated with the provided peer in message
+
+func askForData(addr net.Addr,
+	conn packet_manager.PacketConn,
+	request pmp.DatumRequestMsg,
+	tree mt.RemoteMerkleTree,
+	hash string,
+	peersTrees map[string]mt.RemoteMerkleTree,
+	peer networking.Peer, mutex *sync.Mutex) mm.TuiMessage {
+
+	data := conn.SendRequest(addr, pmp.EncodeMessage(request),
+		networking.NewRetryPolicyRequest())
+	if data.Err != nil {
+		return mm.TuiError("Failed to get response from peer" + data.Err.Error())
+	}
+	msg, err := decodeDatumResponse(hash, data)
+	if err != nil {
+		slog.Error("Failed to decode datum response", "err", err)
+	}
+	if msg.NodeType == mt.DIRECTORY {
+		if err := tree.DiscoverAsDirectory(hash, msg.Children); err != nil {
+			return mm.TuiError(err.Error())
+		}
+	}
+	if msg.NodeType == mt.CHUNK {
+		if err := tree.DiscoverAsChunk(hash, msg.Data); err != nil {
+			return mm.TuiError(err.Error())
+		}
+	}
+	if msg.NodeType == mt.BIG {
+		if err := tree.DiscoverAsBig(hash, msg.Children); err != nil {
+			return mm.TuiError(err.Error())
+		}
+	}
+	subfolders, files, err := getFoldersAndFiles(tree.GetNode(hash), peer, "root", tree, conn)
+	if err != nil {
+		return mm.TuiError(err.Error())
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	peersTrees[peer.Name] = tree
+	folder := message_manager.TUIFolder{
+		Name:       "root",
+		Path:       "root",
+		Files:      files,
+		Subfolders: subfolders,
+		Loaded:     true,
+		Expanded:   true,
+	}
+	return message_manager.CreateTuiFolders(folder)
+}
 
 func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, peersTrees map[string]mt.RemoteMerkleTree, mutex *sync.Mutex) mm.TuiMessage {
 	receivedData, err := sendRootRequest(conn, peer)
@@ -105,198 +217,137 @@ func ReloadPeerContent(conn packet_manager.PacketConn, peer networking.Peer, pee
 
 	hash := mt.ConvertHashBytesToString(receivedData.Hash[:])
 	tree := mt.NewRemoteMerkleTree(hash)
-	ch := make(chan discoveredType, 1)
 
-	discoverNodeType(conn, peer, hash, tree, ch)
-
-	dscvType := <-ch
-
-	if dscvType.err != nil {
-		slog.Warn("Error while trying to discover root type", "peer", peer.Name, "err", dscvType.err)
-		return mm.TuiError(dscvType.err.Error())
+	request := pmp.DatumRequestMsg{
+		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+		Hash:            receivedData.Hash,
 	}
-	if dscvType.cacheType == mt.DIRECTORY || dscvType.cacheType == mt.CHUNK {
-		slog.Debug("Invalid read from cache - there should not be a cache hit during content reload",
-			"peer", peer.Name, "err", err)
-		return mm.ConvertErrorToTuiMessage(err)
-	}
-	subfolders := []mm.TUIFolder{}
-	files := []handler.File{}
-	if dscvType.msg.NodeType == mt.DIRECTORY {
-		if err := tree.DiscoverAsDirectory(dscvType.hash, dscvType.msg.Children); err != nil {
-			return mm.TuiError(err.Error())
-		}
-
-		for _, child := range dscvType.msg.Children.Records {
-			childHash := mt.ConvertHashBytesToString(child.Hash)
-			ch := make(chan discoveredType, 1)
-			discoverNodeType(conn, peer, childHash, tree, ch)
-			childType := <-ch
-			if childType.err != nil {
-				slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", childHash, "err", childType.err)
-				return mm.TuiError(childType.err.Error())
-			}
-			if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
-				continue
-			}
-			if childType.msg.NodeType == mt.DIRECTORY {
-				if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
-					return mm.TuiError(err.Error())
-				}
-				folder := mm.TUIFolder{
-					Hash:       childType.msg.Hash,
-					Name:       child.Name,
-					Path:       "root/" + child.Name,
-					Files:      []handler.File{},
-					Subfolders: nil,
-					Loaded:     false,
-					Expanded:   false,
-				}
-				subfolders = append(subfolders, folder)
-			}
-			if childType.msg.NodeType == mt.CHUNK {
-				if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
-					return mm.TuiError(err.Error())
-				}
-				file := handler.File{
-					Hash: childType.msg.Hash,
-					Name: child.Name,
-					Path: "root/" + child.Name,
-				}
-				files = append(files, file)
-			}
-		}
-	}
-	//how to get name of file when root is only one file ?
-	if dscvType.msg.NodeType == mt.CHUNK {
-		file := handler.File{
-			Hash: dscvType.msg.Hash,
-			Name: "pliczek",
-			Path: "root/" + "pliczek",
-		}
-		files = append(files, file)
-		if err := tree.DiscoverAsChunk(dscvType.hash, dscvType.msg.Data); err != nil {
-			return mm.TuiError(dscvType.err.Error())
-		}
-	}
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	peersTrees[peer.Name] = tree
-	folder := mm.TUIFolder{
-		Hash:       handler.Hash{},
-		Name:       "root",
-		Path:       "root",
-		Files:      files,
-		Subfolders: subfolders,
-		Loaded:     false,
-		Expanded:   false,
-	}
-
-	return mm.CreateTuiFolders(folder)
-
+	return askForData(receivedData.Sender(), conn, request, tree, hash, peersTrees, peer, mutex)
 }
 
 // return a list with available peers
 func ReloadAvailablePeers(server srv_conn.Server) mm.TuiMessage {
 	peers, err := server.GetInfoPeers()
 	if err != nil {
-		return mm.ConvertErrorsToTuiMessage(err)
+		slog.Warn("GetInfoPeers returned errors", "errors", err)
 	}
 	return mm.CreateListPeers(peers)
 }
 
-type discoveredType struct {
-	startHash string
-	hash      string
-	cacheType mt.NodeType
-	msg       pmp.DatumMsg
-	err       error
-}
-
-func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData) discoveredType {
+func decodeDatumResponse(reqHash string, response networking.ReceivedMessageData) (pmp.DatumMsg, error) {
 	responseMessage, err := pmp.DecodeMessage(response)
 	if err != nil {
-		return discoveredType{hash: reqHash, err: err}
+		return pmp.DatumMsg{}, err
 	}
 	switch msg := responseMessage.(type) {
 	case pmp.NoDatumMsg:
-		return discoveredType{hash: reqHash, err: errors.New("no data for given hash")}
+		return pmp.DatumMsg{}, errors.New("no data for given hash")
 	case pmp.DatumMsg:
 		if mt.ConvertHashBytesToString(msg.Hash[:]) != reqHash {
 			slog.Error("not matching hashes:", "got", msg.Hash, "expected", reqHash)
-			return discoveredType{hash: reqHash, err: errors.New("received hash do not match")}
+			return pmp.DatumMsg{}, errors.New("received hash do not match")
 		}
-		return discoveredType{hash: reqHash, msg: msg, err: nil}
+		return msg, nil
 	case pmp.ErrorMsg:
-		return discoveredType{hash: reqHash, err: errors.New("received error response from peer: " + msg.Message)}
+		return pmp.DatumMsg{}, errors.New("received error response from peer: " + msg.Message)
 	}
-	return discoveredType{hash: reqHash, err: errors.New("received unexpected reply from host")}
+	return pmp.DatumMsg{}, errors.New("received unexpected reply from host")
 }
 
-func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, nodeHash string,
-	tree mt.RemoteMerkleTree, dscvChan chan<- discoveredType) {
-	startHash := nodeHash
-	hashBytes, err := mt.ConvertStringHashToBytes(nodeHash)
-	if err != nil {
-		dscvChan <- discoveredType{hash: nodeHash, err: errors.New("invalid hash")}
-		return
+func sendDatumRequestConcurrently(conn packet_manager.PacketConn, addresses []net.Addr, hash []byte) networking.ReceivedMessageData {
+	resultCh := make(chan networking.ReceivedMessageData, len(addresses))
+
+	for _, addr := range addresses {
+		go func(addr net.Addr) {
+			request := pmp.DatumRequestMsg{
+				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+				Hash:            handler.Hash(hash),
+			}
+			data := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+			resultCh <- data
+		}(addr)
 	}
+
+	for range addresses {
+		res := <-resultCh
+		if res.Err == nil {
+			return res
+		}
+	}
+	return networking.ReceivedMessageData{Err: errors.New("none of peers responded successfully")}
+}
+
+func discoverNodeType(conn packet_manager.PacketConn, peer networking.Peer, node *mt.RemoteNode,
+	tree mt.RemoteMerkleTree) (mt.NodeType, error) {
+	var dscvType mt.NodeType
+	nodePath := []*mt.RemoteNode{}
 	for {
 		// Check if we have it already in the tree - cache
-		if node := tree.GetNode(nodeHash); node != nil && node.Type() != mt.NO_TYPE {
-			if node.IsDir() {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.DIRECTORY}
-				return
-			} else if node.IsFile() {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, cacheType: mt.CHUNK}
-				return
+		if node.Type() != mt.NO_TYPE {
+			if node.IsDir {
+				return mt.DIRECTORY, nil
+			} else if node.IsFile {
+				return mt.CHUNK, nil
 			}
 			if len(node.Children()) == 0 {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: errors.New("invalid data in tree")}
-				return
+				return mt.NO_TYPE, errors.New("invalid data in tree")
 			}
-			nodeHash = node.Children()[0].Hash()
-			hashBytes, err = mt.ConvertStringHashToBytes(nodeHash)
-			if err != nil {
-				dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: errors.New("invalid hash in tree")}
-				return
-			}
+			nodePath = append(nodePath, node)
+			node = node.Children()[0]
 			continue
 		}
-
-		// No such node in memory - ask peer
-		request := pmp.DatumRequestMsg{
-			UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-			Hash:            handler.Hash(hashBytes),
+		nodeHashBytes, err := mt.ConvertStringHashToBytes(node.Hash())
+		if err != nil {
+			return mt.NO_TYPE, err
 		}
-		// FIXME(sormys) send to all addresses, check if any address available
-		data := conn.SendRequest(peer.Addresses[0], pmp.EncodeMessage(request),
-			networking.NewRetryPolicyRequest())
+		data := sendDatumRequestConcurrently(conn, peer.Addresses, nodeHashBytes)
 
 		if data.Err != nil {
-			dscvChan <- discoveredType{startHash: startHash, hash: nodeHash, err: data.Err}
-			return
+			return mt.NO_TYPE, data.Err
 		}
-		dscvType := decodeDatumResponse(nodeHash, data)
-		dscvType.startHash = startHash
-		if dscvType.err != nil || dscvType.msg.NodeType != mt.BIG {
-			// The type has been discovered or error occured
-			dscvChan <- dscvType
-			return
-		}
-		// If there would be no children this would fail
-		err = tree.DiscoverAsBig(nodeHash, dscvType.msg.Children)
+		msg, err := decodeDatumResponse(node.Hash(), data)
 		if err != nil {
-			dscvChan <- dscvType
-			return
+			return mt.NO_TYPE, err
+		} else if msg.NodeType == mt.DIRECTORY {
+			// The type has been discovered
+			if err := tree.DiscoverAsDirectory(node.Hash(), msg.Children); err != nil {
+				return mt.NO_TYPE, err
+			}
+			dscvType = mt.DIRECTORY
+			break
+		} else if msg.NodeType == mt.CHUNK {
+			// The type has been discovered
+			if err := tree.DiscoverAsChunk(node.Hash(), msg.Data); err != nil {
+				return mt.NO_TYPE, err
+			}
+			dscvType = mt.CHUNK
+			break
 		}
-		hashBytes = dscvType.msg.Children.Records[0].Hash
-		nodeHash = mt.ConvertHashBytesToString(hashBytes)
+		// BIG node
+		// If there would be no children this would fail
+		err = tree.DiscoverAsBig(node.Hash(), msg.Children)
+		if err != nil {
+			return mt.NO_TYPE, err
+		}
+		nodePath = append(nodePath, node)
+		node = node.Children()[0]
 	}
+	// Udpate isDir/isFile info
+	if dscvType != mt.DIRECTORY && dscvType != mt.CHUNK {
+		return mt.NO_TYPE, errors.New("discovered wrong node type")
+	}
+	for _, pathNode := range nodePath {
+		if dscvType == mt.DIRECTORY {
+			pathNode.IsDir = true
+		} else {
+			pathNode.IsFile = true
+		}
+	}
+	return dscvType, nil
 }
+
 func getFoldersAndFiles(node *mt.RemoteNode,
-	message mm.BasicFolder,
+	peer networking.Peer,
 	path string,
 	tree mt.RemoteMerkleTree,
 	conn packet_manager.PacketConn) ([]mm.TUIFolder, []handler.File, error) {
@@ -304,52 +355,45 @@ func getFoldersAndFiles(node *mt.RemoteNode,
 	subfolders := []mm.TUIFolder{}
 	files := []handler.File{}
 	for _, child := range node.Children() {
-		childHash := child.Hash()
-		ch := make(chan discoveredType, 1)
-		discoverNodeType(conn, message.Peer, childHash, tree, ch)
-		childType := <-ch
-		if childType.err != nil {
-			slog.Warn("Error discovering child node type", "peer", message.Peer.Name, "childHash", childHash, "err", childType.err)
-			return subfolders, files, childType.err
+		dscvType, err := discoverNodeType(conn, peer, child, tree)
+		if err != nil {
+			slog.Warn("Error discovering child node type", "peer", peer.Name, "childHash", child.Hash(), "err", err)
+			return subfolders, files, err
 		}
-		if childType.cacheType == mt.DIRECTORY || childType.cacheType == mt.CHUNK {
-			continue
-		}
-		if childType.msg.NodeType == mt.DIRECTORY {
-			if err := tree.DiscoverAsDirectory(childType.hash, childType.msg.Children); err != nil {
-				return subfolders, files, err
-			}
-			nodeHashBytes, err := mt.ConvertStringHashToBytes(childType.startHash)
+		if dscvType == mt.DIRECTORY {
+			nodeHashBytes, err := mt.ConvertStringHashToBytes(child.Hash())
 			if err != nil {
 				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
 			}
-			folder := mm.TUIFolder{
-				Hash:       handler.Hash(nodeHashBytes),
-				Name:       child.Name(),
-				Path:       path + "/" + child.Name(),
-				Files:      nil,
-				Subfolders: nil,
-				Loaded:     false,
-				Expanded:   false,
+			if node.Type() == mt.DIRECTORY || len(subfolders) == 0 {
+				folder := mm.TUIFolder{
+					Hash:       handler.Hash(nodeHashBytes),
+					Name:       child.Name(),
+					Path:       path + "/" + child.Name(),
+					Files:      nil,
+					Subfolders: nil,
+					Loaded:     false,
+					Expanded:   false,
+				}
+				subfolders = append(subfolders, folder)
 			}
-			subfolders = append(subfolders, folder)
 		}
-		if childType.msg.NodeType == mt.CHUNK {
-			if err := tree.DiscoverAsChunk(childType.hash, childType.msg.Data); err != nil {
-				return subfolders, files, err
-			}
-			nodeHashBytes, err := mt.ConvertStringHashToBytes(childType.startHash)
+		if dscvType == mt.CHUNK {
+			nodeHashBytes, err := mt.ConvertStringHashToBytes(child.Hash())
 			if err != nil {
 				return []mm.TUIFolder{}, []handler.File{}, errors.New("failed to convert hash string to bytes")
 			}
-			file := handler.File{
-				Hash: handler.Hash(nodeHashBytes),
-				Name: child.Name(),
-				Path: path + "/" + child.Name(),
+			if node.Type() == mt.DIRECTORY || len(subfolders) == 0 {
+				file := handler.File{
+					Hash: handler.Hash(nodeHashBytes),
+					Name: child.Name(),
+					Path: path + "/" + child.Name(),
+				}
+				files = append(files, file)
 			}
-			files = append(files, file)
 		}
 	}
+
 	return subfolders, files, nil
 }
 
@@ -367,13 +411,10 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 	if node == nil {
 		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
 	}
-	if node.Type() != mt.DIRECTORY {
+	if !node.IsDir {
 		return mm.TuiError("The node is not a directory")
 	}
-	// FIXME(sormys) this should probably be an option in packet manager, for now,
-	// ignoring issue of creating multiple coroutines here
-	// responseChan := make(chan discoveredType, len(node.Children()))
-	subfolders, files, err := getFoldersAndFiles(node, message, message.Path, tree, conn)
+	subfolders, files, err := getFoldersAndFiles(node, message.Peer, message.Path, tree, conn)
 	if err != nil {
 		return mm.TuiError(err.Error())
 	}
@@ -386,91 +427,184 @@ func GetDirectoryContent(conn packet_manager.PacketConn, message mm.BasicFolder,
 		Expanded:   true,
 	}
 	return message_manager.CreateTuiFolders(folder)
-	// TODO(sormys) Gather types and send the info using standard inteface
 }
 
-func downloadSubtreeHelper(conn packet_manager.PacketConn, message mm.BasicFileInfo,
-	tree mt.RemoteMerkleTree, nodeHash string) []byte {
-	if node := tree.GetNode(nodeHash); node != nil && node.Type() != mt.NO_TYPE {
-		slog.Debug("Cache hit")
-		if node.IsDir() {
-			return nil
+func cacheNodeWorker(conn packet_manager.PacketConn, tree mt.RemoteMerkleTree,
+	peer networking.Peer, reqCh chan string, resCh chan int, stopCh chan bool) {
+	tryDeferWork := func(hash string) bool {
+		select {
+		case reqCh <- hash:
+			return true
+		default:
+			slog.Error("File too big to download it efficiently")
+			resCh <- -1
+			return false
 		}
-		if node.Type() == mt.CHUNK {
-			return node.Data()
-		}
-		if node.Type() != mt.BIG {
-			return nil
-		}
-		var data bytes.Buffer
-		for _, ch := range node.Children() {
-			chData := downloadSubtreeHelper(conn, message, tree, ch.Hash())
-			if chData == nil {
-				return nil
+	}
+	for {
+		select {
+		case <-stopCh:
+			return
+		case hash := <-reqCh:
+			// Already in Cache
+			if node := tree.GetNode(hash); node != nil && node.Type() != mt.NO_TYPE {
+				if node.IsDir {
+					resCh <- -1
+					slog.Warn("In file subtree there is a directory")
+					continue
+				}
+				if node.Type() == mt.CHUNK {
+					resCh <- 0
+					continue
+				}
+				if node.Type() != mt.BIG {
+					resCh <- -1
+					slog.Warn("Unexpected type of node in file subtree", "type", node.Type())
+					continue
+				}
+				for _, ch := range node.Children() {
+					if ok := tryDeferWork(ch.Hash()); !ok {
+						break
+					}
+				}
+				resCh <- len(node.Children())
+				continue
 			}
-			data.Write(chData)
+			// Download
+			hashBytes, err := mt.ConvertStringHashToBytes(hash)
+			if err != nil {
+				resCh <- -1
+				slog.Warn("Failed to convert to bytes", "hash", hash)
+				continue
+			}
+			request := pmp.DatumRequestMsg{
+				UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
+				Hash:            handler.Hash(hashBytes),
+			}
+
+			resultCh := make(chan networking.ReceivedMessageData, len(peer.Addresses))
+			for _, addr := range peer.Addresses {
+				go func(addr net.Addr) {
+					data := conn.SendRequest(addr, pmp.EncodeMessage(request), networking.NewRetryPolicyRequest())
+					resultCh <- data
+				}(addr)
+			}
+			var data networking.ReceivedMessageData
+			for range peer.Addresses {
+				data = <-resultCh
+				if data.Err == nil {
+					break
+				}
+			}
+
+			if data.Err != nil {
+				slog.Warn("Error while receiving reply", "err", data.Err)
+				resCh <- -1
+				continue
+			}
+			msg, err := decodeDatumResponse(hash, data)
+			if err != nil {
+				slog.Warn("Error while decoding datum response", "err", err)
+				resCh <- -1
+				continue
+			}
+			if msg.NodeType == mt.CHUNK {
+				if err := tree.DiscoverAsChunk(hash, msg.Data); err != nil {
+					slog.Warn("Error while discovering as chunk", "err", err)
+					resCh <- -1
+					continue
+				}
+				resCh <- 0
+				continue
+			}
+			if msg.NodeType == mt.DIRECTORY {
+				resCh <- -1
+				slog.Warn("Invalid type(directory)", "hash", hash)
+				continue
+			}
+			if err := tree.DiscoverAsBig(hash, msg.Children); err != nil {
+				resCh <- -1
+				slog.Warn("Failed to discover node as big")
+				continue
+			}
+			for _, ch := range msg.Children.Records {
+				if ok := tryDeferWork(mt.ConvertHashBytesToString(ch.Hash)); !ok {
+					break
+				}
+			}
+			resCh <- len(msg.Children.Records)
+			continue
 		}
-		return data.Bytes()
 	}
-	slog.Debug("No Cache")
+}
 
-	nodeBytes, err := mt.ConvertStringHashToBytes(nodeHash)
-	if err != nil {
-		slog.Warn("failed to convert")
-		return nil
+func cacheFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	tree mt.RemoteMerkleTree, nodeHash string) error {
+	reqCh := make(chan string, 1000000) // Allow for very big files
+	resCh := make(chan int, 1000)       // result is how many new nodes have to be queried, -1 means that error has occured
+	stopCh := make(chan bool)
+	for range DOWNLOAD_THREADS {
+		go cacheNodeWorker(conn, tree, message.Peer, reqCh, resCh, stopCh)
 	}
-	request := pmp.DatumRequestMsg{
-		UnsignedMessage: pmp.NewEmptyUnsignedMessage(utility.GenerateID()),
-		Hash:            handler.Hash(nodeBytes),
+	closeWorkers := func() {
+		slog.Debug("Closing cache workers")
+		for range DOWNLOAD_THREADS {
+			stopCh <- true
+		}
 	}
-	// FIXME(sormys) send to all addresses, check if any address available
-	data := conn.SendRequest(message.Peer.Addresses[0], pmp.EncodeMessage(request),
-		networking.NewRetryPolicyRequest())
 
-	if data.Err != nil {
-		slog.Warn("Error while receiving reply", "err", data.Err)
-		return nil
-	}
-	dscvType := decodeDatumResponse(nodeHash, data)
-	if dscvType.err != nil {
-		slog.Warn("Error while decoding datum response", "err", dscvType.err)
-		return nil
-	}
-	if dscvType.msg.NodeType == mt.CHUNK {
-		if err := tree.DiscoverAsChunk(nodeHash, dscvType.msg.Data); err != nil {
-			slog.Warn("Error while discovering as chunk", "err", err)
+	reqCh <- nodeHash
+	remaining := 1
+	for {
+		newQueries := <-resCh
+		if newQueries == -1 {
+			closeWorkers()
+			return errors.New("unable to cache file")
+		}
+		remaining--
+		remaining += newQueries
+		if remaining == 0 {
+			closeWorkers()
 			return nil
 		}
-		return dscvType.msg.Data
 	}
-	if dscvType.msg.NodeType == mt.DIRECTORY {
+}
+
+func downloadSubtree(tree mt.RemoteMerkleTree, nodeHash string) []byte {
+	node := tree.GetNode(nodeHash)
+	if node == nil || (node.Type() != mt.CHUNK && node.Type() != mt.BIG) {
+		slog.Error("File was cached correctly but did not find chunk/big node")
 		return nil
 	}
-	// dscvType.msg.NodeType == mt.BIG
-	if err := tree.DiscoverAsBig(nodeHash, dscvType.msg.Children); err != nil {
-		return nil
+	if node.Type() == mt.CHUNK {
+		return node.Data()
 	}
-	var fileData bytes.Buffer
-	for _, ch := range dscvType.msg.Children.Records {
-		chData := downloadSubtreeHelper(conn, message, tree, mt.ConvertHashBytesToString(ch.Hash))
+	// mt.BIG
+	var data bytes.Buffer
+	for _, ch := range node.Children() {
+		chData := downloadSubtree(tree, ch.Hash())
 		if chData == nil {
 			return nil
 		}
-		fileData.Write(chData)
+		data.Write(chData)
 	}
-	return fileData.Bytes()
+	return data.Bytes()
 }
 
-func downloadSubtree(conn packet_manager.PacketConn, message mm.BasicFileInfo,
-	tree mt.RemoteMerkleTree, nodeHash string, dataCh chan []byte) {
-	dataCh <- downloadSubtreeHelper(conn, message, tree, nodeHash)
+func downloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
+	tree mt.RemoteMerkleTree, nodeHash string) []byte {
+	if err := cacheFile(conn, message, tree, nodeHash); err != nil {
+		return nil
+	}
+	slog.Debug("file has been cached successfuly, gathering data...", "hash", nodeHash)
+	return downloadSubtree(tree, nodeHash)
 }
 
 func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	peersTrees map[string]mt.RemoteMerkleTree, treeMutex *sync.Mutex) mm.TuiMessage {
 	treeMutex.Lock()
-	defer treeMutex.Unlock()
 	tree, exist := peersTrees[message.Peer.Name]
+	treeMutex.Unlock()
 	if !exist {
 		return mm.TuiError("No tree for given peer")
 	}
@@ -479,23 +613,27 @@ func DownloadFile(conn packet_manager.PacketConn, message mm.BasicFileInfo,
 	if node == nil {
 		return mm.TuiError("Node does not exist. Hash: " + nodeHash)
 	}
-	if !node.IsFile() {
+	if !node.IsFile {
 		return mm.TuiError("The node is not a File")
 	}
 	slog.Info("Downloading file started")
-	data := downloadSubtreeHelper(conn, message, tree, nodeHash)
+	data := downloadFile(conn, message, tree, nodeHash)
 	if data == nil {
 		return mm.TuiError("Failed to download file data")
 	}
 
-	// Save data to tmp.tmp file
-	err := os.WriteFile("tmp.tmp", data, 0644)
+	slog.Debug("Downloaded file data", "data", message.Name)
+	path, err := getDownloadPath(message.Peer.Name, message.Name)
+	if err != nil {
+		return mm.TuiInfo("Failed to create Folder to downloading" + message.Name)
+	}
+	err = os.WriteFile(path, data, 0644)
 	if err != nil {
 		return mm.TuiError("Failed to save file: " + err.Error())
 	}
 
-	slog.Debug("File saved successfully", "filename", "tmp.tmp", "size", len(data))
-	return mm.TuiInfo("File downloaded and saved as tmp.tmp")
+	slog.Debug("File saved successfully", "filename", message.Name, "size", len(data))
+	return mm.TuiInfo("File downloaded and saved in" + path)
 }
 
 func RunUserRequestHandler(conn packet_manager.PacketConn,
@@ -505,7 +643,6 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 
 	var mutex sync.Mutex
 	var data mm.TuiMessage
-	// var err error
 
 	peersTrees := map[string]mt.RemoteMerkleTree{}
 
@@ -513,38 +650,21 @@ func RunUserRequestHandler(conn packet_manager.PacketConn,
 		go func(message mm.TuiMessage) {
 			switch message.RequestType() {
 			case mm.CONNECT:
-				{
-					// Expected output is peer when after successful handshake. You can use
-					data = StartConnection(conn, message.Payload().([]networking.Peer)[0], nickname)
-				}
+				data = StartConnection(conn, message.Payload().([]networking.Peer)[0], nickname)
 			case mm.RELOAD_CONTENT:
-				{
-					// data = ReloadPeerContent(conn, message.Payload().(mm.TuiMessageBasicInfo))
-
-					// in this state handler should reset all his states!
-
-					data = ReloadAvailablePeers(server)
+				mutex.Lock()
+				for k := range peersTrees {
+					delete(peersTrees, k)
 				}
+				mutex.Unlock()
+				data = ReloadAvailablePeers(server)
 			case mm.EXPAND_FOLDER:
-				{
-					// In this case the folder's contens are not yet loaded in the TUI.
-					// Check if the contents are available in the cache. If not,
-					// send a request to fetch data. Expected output is TuiMessage -> see expandFolder
-
-					data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
-				}
+				data = GetDirectoryContent(conn, message.Payload().(mm.BasicFolder), peersTrees, &mutex)
 			case mm.DOWNLOAD:
-				{
-					data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
-				}
-
+				data = DownloadFile(conn, message.Payload().(mm.BasicFileInfo), peersTrees, &mutex)
 			case mm.SHOW_DATA:
-				{
-					// In this case we want discover user's file. So you have to sent RootRequest
-					user := message.Payload().([]networking.Peer)[0]
-					// Expected output is TuiMessage -> see expand Folder
-					data = ReloadPeerContent(conn, user, peersTrees, &mutex)
-				}
+				user := message.Payload().([]networking.Peer)[0]
+				data = ReloadPeerContent(conn, user, peersTrees, &mutex)
 			}
 			if data != nil && !mm.IsEmpty(data) {
 				tuiSender <- data

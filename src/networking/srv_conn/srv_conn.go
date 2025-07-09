@@ -8,6 +8,7 @@ import (
 	"mimuw_zps/src/encryption"
 	"mimuw_zps/src/networking"
 	"mimuw_zps/src/networking/packet_manager"
+	pmp "mimuw_zps/src/peer_message_parser"
 	"mimuw_zps/src/utility"
 	"net/http"
 	"net/url"
@@ -193,6 +194,22 @@ func (s Server) GetInfoPeers() ([]networking.Peer, []error) {
 	return peers, errors
 }
 
+func (s Server) GetInfoPeer(nickname string) (networking.Peer, error) {
+	addr, err := s.GetPeerAddresses(nickname)
+	if err != nil {
+		return networking.Peer{}, err
+	}
+	addresses, errArray := convertStringToAddr(addr)
+	if len(errArray) > 0 {
+		return networking.Peer{}, errArray[0]
+	}
+	key, err := s.GetPeerKey(nickname)
+	if err != nil {
+		return networking.Peer{}, err
+	}
+	return networking.NewPeer(nickname, addresses, key), nil
+}
+
 // Registers the user's key with the server and performs the initial handshake.
 // Return nil if successful; otherwise, returns and error
 func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketConn) error {
@@ -217,16 +234,27 @@ func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketCon
 	}
 
 	id := utility.GenerateID()
-	message := CreateHandshakeBytes(HELLO, nickname, id)
+	request := pmp.HelloMsg{
+		SignedMessage: pmp.NewEmptySignedMessage(id),
+		Extensions:    pmp.GetExtensions(),
+		Name:          nickname,
+	}
 	for i := range addr {
 		servAddr, err := getUDPaddr(addr[i])
 		if err != nil {
 			return err
 		}
 
-		received := conn.SendRequest(servAddr, message, networking.NewRetryPolicyAwaitOnce())
-		if received.Err != nil {
-			slog.Error("failed to send request", "err", received.Err)
+		received := conn.SendRequest(servAddr, pmp.EncodeMessage(request), networking.NewRetryPolicyAwaitOnce())
+		decode, err := pmp.DecodeMessage(received)
+		if err != nil {
+			slog.Warn("Error while sending hello to server, trying next address...", "err", err)
+			continue
+		}
+		switch msg := decode.(type) {
+		case pmp.ErrorMsg:
+			slog.Warn("Received error reply when sending hello to server, trying next address...", "message", msg.Message)
+			continue
 		}
 	}
 
@@ -235,8 +263,8 @@ func (s Server) ConnectWithServer(nickname string, conn packet_manager.PacketCon
 	if err != nil || len(addresses) == 0 {
 		return errors.New("failed to register address to the server")
 	}
-	return nil
 
+	return nil
 }
 func splitLines(str string) []string {
 	lines := strings.Split(str, "\n")
